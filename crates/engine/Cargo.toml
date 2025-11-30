@@ -1,0 +1,8 @@
+[package]
+name = "daw_engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cpal = "0.16"
+anyhow = "1.0"

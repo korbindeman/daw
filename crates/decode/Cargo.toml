@@ -1,0 +1,6 @@
+[package]
+name = "daw_decode"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

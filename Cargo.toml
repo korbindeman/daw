@@ -1,0 +1,9 @@
+[workspace]
+resolver = "3"
+members = ["crates/decode","crates/engine"
+, "crates/transport"]
+
+[workspace.package]
+name = "daw"
+version = "0.1.0"
+edition = "2024"
