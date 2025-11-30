@@ -4,3 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+daw_transport = { path = "../transport" }
+symphonia = "0.5.5"
+anyhow = "1.0"
