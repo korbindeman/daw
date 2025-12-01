@@ -1,7 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/decode","crates/engine"
-, "crates/transport"]
+members = [
+    "crates/app",
+    "crates/decode",
+    "crates/engine",
+    "crates/transport"
+]
 
 [workspace.package]
 name = "daw"

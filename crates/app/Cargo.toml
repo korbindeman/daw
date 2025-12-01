@@ -1,9 +1,11 @@
 [package]
-name = "daw_decode"
+name = "daw_app"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
+daw_decode = { path = "../decode" }
+daw_engine = { path = "../engine" }
 daw_transport = { path = "../transport" }
-symphonia = "0.5"
+gpui = "*"
 anyhow = "1.0"

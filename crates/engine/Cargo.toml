@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+daw_decode = { path = "../decode" }
+daw_transport = { path = "../transport" }
 cpal = "0.16"
 anyhow = "1.0"
-daw_decode = { path = "../decode" }
+rtrb = "0.3"
