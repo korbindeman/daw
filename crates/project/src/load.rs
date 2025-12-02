@@ -1,5 +1,5 @@
 use crate::{Project, ProjectError};
-use daw_transport::{Clip, ClipId, Track, TrackId};
+use daw_transport::{Clip, ClipId, Track, TrackId, WaveformData};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -43,10 +43,13 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
 
             audio_paths.insert(clip_data.id, clip_data.audio_path.clone());
 
+            let waveform = WaveformData::from_audio_buffer(&audio_buffer, 512);
+
             clips.push(Clip {
                 id: ClipId(clip_data.id),
                 start: clip_data.start,
                 audio: Arc::new(audio_buffer),
+                waveform: Arc::new(waveform),
             });
         }
 
@@ -69,7 +72,7 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
 mod tests {
     use super::*;
     use crate::{save_project, ClipData, Project, TrackData};
-    use daw_transport::{AudioBuffer, Clip, ClipId, Track, TrackId};
+    use daw_transport::{AudioBuffer, Clip, ClipId, Track, TrackId, WaveformData};
     use std::collections::HashMap;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -127,6 +130,7 @@ mod tests {
             sample_rate: 44100,
             channels: 2,
         });
+        let waveform = Arc::new(WaveformData::from_audio_buffer(&audio, 512));
 
         let original_track = Track {
             id: TrackId(1),
@@ -134,6 +138,7 @@ mod tests {
                 id: ClipId(100),
                 start: 960,
                 audio,
+                waveform,
             }],
         };
 

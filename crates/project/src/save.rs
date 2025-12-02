@@ -46,7 +46,7 @@ pub fn save_project(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use daw_transport::{AudioBuffer, Clip, ClipId, Track, TrackId};
+    use daw_transport::{AudioBuffer, Clip, ClipId, Track, TrackId, WaveformData};
     use std::collections::HashMap;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -58,6 +58,7 @@ mod tests {
             sample_rate: 44100,
             channels: 2,
         });
+        let waveform = Arc::new(WaveformData::from_audio_buffer(&audio, 512));
 
         let track = Track {
             id: TrackId(1),
@@ -66,11 +67,13 @@ mod tests {
                     id: ClipId(100),
                     start: 0,
                     audio: audio.clone(),
+                    waveform: waveform.clone(),
                 },
                 Clip {
                     id: ClipId(101),
                     start: 960,
                     audio: audio.clone(),
+                    waveform: waveform.clone(),
                 },
             ],
         };
@@ -162,6 +165,7 @@ mod tests {
             sample_rate: 44100,
             channels: 2,
         });
+        let waveform = Arc::new(WaveformData::from_audio_buffer(&audio, 512));
 
         let track = Track {
             id: TrackId(1),
@@ -169,6 +173,7 @@ mod tests {
                 id: ClipId(999),
                 start: 0,
                 audio,
+                waveform,
             }],
         };
 

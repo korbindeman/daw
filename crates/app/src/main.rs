@@ -135,15 +135,11 @@ impl Render for Daw {
             .flex_col()
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(move |this, _: &PlayPause, _, cx| {
-                println!("PlayPause action triggered!");
                 let is_playing = this.header_handle.read(cx).playing;
-                println!("Current playing state: {}", is_playing);
                 header_handle.update(cx, |_, cx| {
                     if is_playing {
-                        println!("Emitting Pause event");
                         cx.emit(HeaderEvent::Pause);
                     } else {
-                        println!("Emitting Play event");
                         cx.emit(HeaderEvent::Play);
                     }
                 });
@@ -251,16 +247,10 @@ actions!(daw, [PlayPause, Quit]);
 fn main() {
     Application::new().run(|cx: &mut App| {
         cx.on_action(|_: &Quit, cx: &mut App| {
-            println!("Quit action triggered!");
             cx.quit();
         });
 
-        let bindings = keybindings();
-        println!("Registering {} keybindings", bindings.len());
-        for binding in &bindings {
-            println!("  Binding: {:?}", binding);
-        }
-        cx.bind_keys(bindings);
+        cx.bind_keys(keybindings());
 
         cx.open_window(WindowOptions::default(), |_, cx| cx.new(|cx| Daw::new(cx)))
             .unwrap();

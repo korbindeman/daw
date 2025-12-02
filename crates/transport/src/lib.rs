@@ -10,6 +10,48 @@ pub struct AudioBuffer {
     pub channels: u16,
 }
 
+#[derive(Debug, Clone)]
+pub struct WaveformData {
+    pub peaks: Vec<(f32, f32)>,
+    pub samples_per_bucket: usize,
+}
+
+impl WaveformData {
+    pub fn from_audio_buffer(buffer: &AudioBuffer, samples_per_bucket: usize) -> Self {
+        let samples_per_channel = buffer.samples.len() / buffer.channels as usize;
+        let num_buckets = (samples_per_channel + samples_per_bucket - 1) / samples_per_bucket;
+        let mut peaks = Vec::with_capacity(num_buckets);
+
+        for bucket_idx in 0..num_buckets {
+            let start = bucket_idx * samples_per_bucket;
+            let end = ((bucket_idx + 1) * samples_per_bucket).min(samples_per_channel);
+
+            let mut min_val: f32 = 0.0;
+            let mut max_val: f32 = 0.0;
+
+            for sample_idx in start..end {
+                let mut sum: f32 = 0.0;
+                for ch in 0..buffer.channels as usize {
+                    let idx = sample_idx * buffer.channels as usize + ch;
+                    if idx < buffer.samples.len() {
+                        sum += buffer.samples[idx];
+                    }
+                }
+                let mono_sample = sum / buffer.channels as f32;
+                min_val = min_val.min(mono_sample);
+                max_val = max_val.max(mono_sample);
+            }
+
+            peaks.push((min_val, max_val));
+        }
+
+        Self {
+            peaks,
+            samples_per_bucket,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum Command {
     Play,
@@ -27,6 +69,7 @@ pub struct Clip {
     pub id: ClipId,
     pub start: u64, // tick position on timeline
     pub audio: Arc<AudioBuffer>,
+    pub waveform: Arc<WaveformData>,
 }
 
 impl Clip {
