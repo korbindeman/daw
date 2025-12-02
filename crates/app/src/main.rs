@@ -1,16 +1,15 @@
+mod beats;
 mod ui;
 
-use std::{path::Path, sync::Arc};
-
 use daw_engine as engine;
+use daw_transport::Command;
 use daw_transport::Status;
-use daw_transport::{Clip, ClipId, Command, Track as TransportTrack, TrackId};
 use gpui::{App, Application, Context, Entity, Timer, Window, WindowOptions, div, prelude::*, rgb};
 use std::time::Duration;
 use ui::{Header, HeaderEvent, Sidebar, Track};
 
 struct Daw {
-    tracks: Vec<TransportTrack>,
+    tracks: Vec<daw_transport::Track>,
     engine_handle: engine::AudioEngineHandle,
     current_tick: u64,
     time_signature: (u32, u32), // (numerator, denominator) e.g., (4, 4)
@@ -20,38 +19,7 @@ struct Daw {
 impl Daw {
     fn new(cx: &mut Context<Self>) -> Self {
         let time_signature = (4, 4);
-
-        let kick_buffer =
-            Arc::new(daw_decode::decode_file(Path::new("samples/cr78/kick.wav")).unwrap());
-        let hihat_buffer =
-            Arc::new(daw_decode::decode_file(Path::new("samples/cr78/hihat.wav")).unwrap());
-
-        let tracks = vec![
-            TransportTrack {
-                id: TrackId(0),
-                clips: vec![
-                    Clip {
-                        id: ClipId(0),
-                        start: 0,
-                        audio: kick_buffer.clone(),
-                    },
-                    Clip {
-                        id: ClipId(1),
-                        start: 960 * 3, // beat 3
-                        audio: kick_buffer.clone(),
-                    },
-                ],
-            },
-            TransportTrack {
-                id: TrackId(1),
-                clips: vec![Clip {
-                    id: ClipId(2),
-                    start: 0, // beat 2
-                    audio: hihat_buffer.clone(),
-                }],
-            },
-        ];
-
+        let tracks = beats::four_on_the_floor();
         let bpm = 120.0;
         let engine_handle = engine::start(tracks.clone(), bpm).unwrap();
 

@@ -45,6 +45,15 @@ impl Header {
         format!("{}.{}.{}", bar, beat, division)
     }
 
+    fn format_seconds(&self, ticks: u64) -> String {
+        let seconds_per_beat = 60.0 / self.bpm;
+        let seconds_per_tick = seconds_per_beat / PPQN as f64;
+        let total_seconds = ticks as f64 * seconds_per_tick;
+        let minutes = (total_seconds / 60.0) as u32;
+        let seconds = total_seconds % 60.0;
+        format!("{}:{:05.2}", minutes, seconds)
+    }
+
     pub fn set_tick(&mut self, tick: u64, cx: &mut Context<Self>) {
         self.current_tick = tick;
         cx.notify();
@@ -59,6 +68,7 @@ impl Header {
 impl Render for Header {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let musical_time = self.format_musical_time(self.current_tick);
+        let time_seconds = self.format_seconds(self.current_tick);
 
         div()
             .w_full()
@@ -105,5 +115,6 @@ impl Render for Header {
             )
             .child(div().ml_auto().child(format!("{} BPM", self.bpm)))
             .child(div().ml_4().child(musical_time))
+            .child(div().ml_4().child(time_seconds))
     }
 }
