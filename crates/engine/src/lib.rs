@@ -2,9 +2,7 @@ use cpal::{
     FromSample, SizedSample,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
-use daw_transport::{Command, Status, Track};
-
-const PPQN: f64 = 960.0;
+use daw_transport::{Command, PPQN, Status, Track};
 
 struct PlaybackState {
     playing: bool,
@@ -14,13 +12,13 @@ struct PlaybackState {
 
 fn ticks_to_samples(ticks: f64, tempo: f64, sample_rate: u32) -> f64 {
     let seconds_per_beat = 60.0 / tempo;
-    let seconds_per_tick = seconds_per_beat / PPQN;
+    let seconds_per_tick = seconds_per_beat / PPQN as f64;
     ticks * seconds_per_tick * sample_rate as f64
 }
 
 fn samples_to_ticks(samples: f64, tempo: f64, sample_rate: u32) -> f64 {
     let seconds_per_beat = 60.0 / tempo;
-    let seconds_per_tick = seconds_per_beat / PPQN;
+    let seconds_per_tick = seconds_per_beat / PPQN as f64;
     samples / (seconds_per_tick * sample_rate as f64)
 }
 
