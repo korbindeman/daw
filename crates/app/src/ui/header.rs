@@ -4,20 +4,25 @@ use gpui::{Context, EventEmitter, Window, black, div, prelude::*, px};
 pub struct Header {
     current_tick: u64,
     time_signature: (u32, u32),
+    bpm: f64,
+    playing: bool,
 }
 
 pub enum HeaderEvent {
     Play,
+    Pause,
     Stop,
 }
 
 impl EventEmitter<HeaderEvent> for Header {}
 
 impl Header {
-    pub fn new(current_tick: u64, time_signature: (u32, u32)) -> Self {
+    pub fn new(current_tick: u64, time_signature: (u32, u32), bpm: f64) -> Self {
         Self {
             current_tick,
             time_signature,
+            bpm,
+            playing: false,
         }
     }
 
@@ -39,6 +44,16 @@ impl Header {
         let (bar, beat, division) = self.ticks_to_musical_time(ticks);
         format!("{}.{}.{}", bar, beat, division)
     }
+
+    pub fn set_tick(&mut self, tick: u64, cx: &mut Context<Self>) {
+        self.current_tick = tick;
+        cx.notify();
+    }
+
+    pub fn set_playing(&mut self, playing: bool, cx: &mut Context<Self>) {
+        self.playing = playing;
+        cx.notify();
+    }
 }
 
 impl Render for Header {
@@ -56,18 +71,22 @@ impl Render for Header {
             .items_center()
             .child(
                 div()
-                    .id("play-button")
+                    .id("play-pause-button")
                     .px_4()
                     .py_2()
                     .border_1()
                     .border_color(black())
                     .on_mouse_down(
                         gpui::MouseButton::Left,
-                        cx.listener(|_, _, _, cx| {
-                            cx.emit(HeaderEvent::Play);
+                        cx.listener(|this, _, _, cx| {
+                            if this.playing {
+                                cx.emit(HeaderEvent::Pause);
+                            } else {
+                                cx.emit(HeaderEvent::Play);
+                            }
                         }),
                     )
-                    .child("Play"),
+                    .child(if self.playing { "Pause" } else { "Play" }),
             )
             .child(
                 div()
@@ -84,6 +103,7 @@ impl Render for Header {
                     )
                     .child("Stop"),
             )
-            .child(div().ml_auto().child(musical_time))
+            .child(div().ml_auto().child(format!("{} BPM", self.bpm)))
+            .child(div().ml_4().child(musical_time))
     }
 }
