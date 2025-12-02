@@ -1,4 +1,5 @@
-use gpui::{black, div, prelude::*, px, Context, Window};
+use crate::theme::ActiveTheme;
+use gpui::{div, prelude::*, px, Context, Window};
 
 pub struct Sidebar {
     samples: Vec<String>,
@@ -22,20 +23,21 @@ impl Sidebar {
 }
 
 impl Render for Sidebar {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+
         div()
             .h_full()
             .w(px(200.))
+            .bg(theme.surface)
             .border_r_1()
-            .border_color(black())
+            .border_color(theme.border)
             .flex()
             .flex_col()
             .gap_2()
             .p_2()
-            .children(
-                self.samples
-                    .iter()
-                    .map(|sample| div().child(sample.clone())),
-            )
+            .children(self.samples.iter().map(|sample| {
+                div().text_color(theme.text).child(sample.clone())
+            }))
     }
 }

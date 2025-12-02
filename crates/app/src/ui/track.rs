@@ -1,7 +1,7 @@
+use crate::theme::{ActiveTheme, to_dark_variant};
 use daw_transport::{Clip, PPQN, Track as TransportTrack, WaveformData};
 use gpui::{
-    Bounds, Context, ElementId, Point, Size, Window, black, canvas, div, fill, prelude::*, px,
-    rgb, rgba,
+    Bounds, Context, ElementId, Hsla, Point, Size, Window, canvas, div, fill, prelude::*, px,
 };
 use std::sync::Arc;
 
@@ -29,14 +29,25 @@ impl Track {
 }
 
 impl Render for Track {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        let clips = self.track.clips.iter().map(|clip| {
-            let start_px = (clip.start as f64 / PPQN as f64) * self.pixels_per_beat;
-            let duration_ticks = clip.duration_ticks(self.tempo);
-            let width_px = (duration_ticks as f64 / PPQN as f64) * self.pixels_per_beat;
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let track_index = self.track.id.0 as usize;
+        let track_color = theme.track_colors[track_index % theme.track_colors.len()];
+        // High contrast waveform: dark version of the track color (like #392838 vs #BE8CB9)
+        let waveform_color = to_dark_variant(track_color);
 
-            render_clip(clip, start_px, width_px)
-        });
+        let clips: Vec<_> = self
+            .track
+            .clips
+            .iter()
+            .map(|clip| {
+                let start_px = (clip.start as f64 / PPQN as f64) * self.pixels_per_beat;
+                let duration_ticks = clip.duration_ticks(self.tempo);
+                let width_px = (duration_ticks as f64 / PPQN as f64) * self.pixels_per_beat;
+
+                render_clip(clip, start_px, width_px, track_color, waveform_color)
+            })
+            .collect();
 
         div()
             .id(ElementId::Name(
@@ -45,7 +56,7 @@ impl Render for Track {
             .w_full()
             .h(px(80.))
             .border_b_1()
-            .border_color(black())
+            .border_color(theme.border)
             .overflow_x_scroll()
             .child(
                 div()
@@ -57,7 +68,13 @@ impl Render for Track {
     }
 }
 
-fn render_clip(clip: &Clip, start_px: f64, width_px: f64) -> impl IntoElement {
+fn render_clip(
+    clip: &Clip,
+    start_px: f64,
+    width_px: f64,
+    bg_color: Hsla,
+    waveform_color: Hsla,
+) -> impl IntoElement {
     let waveform = clip.waveform.clone();
 
     div()
@@ -66,14 +83,14 @@ fn render_clip(clip: &Clip, start_px: f64, width_px: f64) -> impl IntoElement {
         .top(px(4.))
         .w(px(width_px as f32))
         .h(px(72.))
-        .bg(rgb(0x8B9DC3))
+        .bg(bg_color)
         .border_1()
-        .border_color(black())
+        .border_color(darken(bg_color, 0.2))
         .overflow_hidden()
-        .child(render_waveform(waveform))
+        .child(render_waveform(waveform, waveform_color))
 }
 
-fn render_waveform(waveform: Arc<WaveformData>) -> impl IntoElement {
+fn render_waveform(waveform: Arc<WaveformData>, color: Hsla) -> impl IntoElement {
     canvas(
         move |bounds, _window, _cx| (bounds, waveform.clone()),
         move |_bounds, (bounds_data, waveform), window, _cx| {
@@ -109,9 +126,16 @@ fn render_waveform(waveform: Arc<WaveformData>) -> impl IntoElement {
                     },
                 };
 
-                window.paint_quad(fill(bar_bounds, rgba(0x3D5A80FF)));
+                window.paint_quad(fill(bar_bounds, color));
             }
         },
     )
     .size_full()
+}
+
+fn darken(color: Hsla, amount: f32) -> Hsla {
+    Hsla {
+        l: (color.l - amount).max(0.0),
+        ..color
+    }
 }

@@ -1,5 +1,6 @@
+use crate::theme::ActiveTheme;
 use daw_transport::PPQN;
-use gpui::{Context, EventEmitter, Window, black, div, prelude::*, px};
+use gpui::{Context, EventEmitter, Window, div, prelude::*, px};
 
 pub struct Header {
     current_tick: u64,
@@ -67,25 +68,32 @@ impl Header {
 
 impl Render for Header {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
         let musical_time = self.format_musical_time(self.current_tick);
         let time_seconds = self.format_seconds(self.current_tick);
 
         div()
             .w_full()
             .h(px(50.))
+            .bg(theme.header)
             .border_b_1()
-            .border_color(black())
+            .border_color(theme.border)
             .flex()
             .gap_2()
             .p_2()
             .items_center()
+            .text_color(theme.background)
             .child(
                 div()
                     .id("play-pause-button")
                     .px_4()
                     .py_2()
+                    .bg(theme.element)
                     .border_1()
-                    .border_color(black())
+                    .border_color(theme.border)
+                    .text_color(theme.text)
+                    .hover(|s| s.bg(theme.element_hover))
+                    .active(|s| s.bg(theme.element_active))
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
@@ -103,8 +111,12 @@ impl Render for Header {
                     .id("stop-button")
                     .px_4()
                     .py_2()
+                    .bg(theme.element)
                     .border_1()
-                    .border_color(black())
+                    .border_color(theme.border)
+                    .text_color(theme.text)
+                    .hover(|s| s.bg(theme.element_hover))
+                    .active(|s| s.bg(theme.element_active))
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(|_, _, _, cx| {

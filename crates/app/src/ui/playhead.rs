@@ -1,5 +1,6 @@
+use crate::theme::ActiveTheme;
 use daw_transport::PPQN;
-use gpui::{Context, Window, div, prelude::*, px, rgb};
+use gpui::{Context, Window, div, prelude::*, px};
 
 pub struct Playhead {
     current_tick: u64,
@@ -20,7 +21,8 @@ impl Playhead {
 }
 
 impl Render for Playhead {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
         let x_pos = (self.current_tick as f64 / PPQN as f64) * self.pixels_per_beat;
 
         div()
@@ -29,6 +31,6 @@ impl Render for Playhead {
             .top(px(0.))
             .bottom(px(0.))
             .w(px(2.))
-            .bg(rgb(0xFF0000))
+            .bg(theme.accent)
     }
 }

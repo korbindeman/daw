@@ -1,4 +1,5 @@
-use gpui::{Context, Window, div, prelude::*, px, rgb};
+use crate::theme::ActiveTheme;
+use gpui::{Context, Window, div, prelude::*, px};
 
 pub struct TimelineRuler {
     pixels_per_beat: f64,
@@ -17,7 +18,8 @@ impl TimelineRuler {
 }
 
 impl Render for TimelineRuler {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
         let beats_per_bar = self.time_signature.0;
         let total_beats = (self.timeline_width / self.pixels_per_beat).ceil() as u32;
 
@@ -40,10 +42,10 @@ impl Render for TimelineRuler {
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(0x000000))
+                                .text_color(theme.text)
                                 .child(format!("{}", bar_number)),
                         )
-                        .child(div().w(px(1.)).h_full().bg(rgb(0x000000))),
+                        .child(div().w(px(1.)).h_full().bg(theme.text_muted)),
                 );
             } else {
                 markers.push(
@@ -52,7 +54,7 @@ impl Render for TimelineRuler {
                         .left(px(x_pos as f32))
                         .top(px(12.))
                         .h(px(8.))
-                        .child(div().w(px(1.)).h_full().bg(rgb(0x888888))),
+                        .child(div().w(px(1.)).h_full().bg(theme.text_muted)),
                 );
             }
         }
@@ -60,9 +62,9 @@ impl Render for TimelineRuler {
         div()
             .w(px(self.timeline_width as f32))
             .h(px(20.))
-            .bg(rgb(0xE8E8E8))
+            .bg(theme.surface)
             .border_b_1()
-            .border_color(rgb(0x000000))
+            .border_color(theme.border)
             .relative()
             .children(markers)
     }

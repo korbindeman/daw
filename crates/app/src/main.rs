@@ -1,4 +1,5 @@
 mod keybindings;
+mod theme;
 mod ui;
 
 use daw_engine as engine;
@@ -6,9 +7,10 @@ use daw_project::load_project;
 use daw_transport::Command;
 use daw_transport::Status;
 use gpui::{
-    App, Application, Context, Entity, FocusHandle, Timer, Window, WindowOptions, actions, black,
-    div, prelude::*, px, rgb,
+    App, Application, Context, Entity, FocusHandle, Timer, Window, WindowOptions, actions, div,
+    prelude::*, px,
 };
+use theme::{ActiveTheme, to_dark_variant};
 use keybindings::keybindings;
 use std::path::Path;
 use std::time::Duration;
@@ -122,6 +124,8 @@ impl Daw {
 
 impl Render for Daw {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme().clone();
+
         // Calculate timeline width based on furthest clip end
         let timeline_width = self.calculate_timeline_width();
 
@@ -130,7 +134,7 @@ impl Render for Daw {
         div()
             .id("root")
             .size_full()
-            .bg(rgb(0xD3D0D1))
+            .bg(theme.background)
             .flex()
             .flex_col()
             .track_focus(&self.focus_handle)
@@ -138,7 +142,7 @@ impl Render for Daw {
                 let is_playing = this.header_handle.read(cx).playing;
                 header_handle.update(cx, |_, cx| {
                     if is_playing {
-                        cx.emit(HeaderEvent::Pause);
+                        cx.emit(HeaderEvent::Stop);
                     } else {
                         cx.emit(HeaderEvent::Play);
                     }
@@ -154,6 +158,7 @@ impl Render for Daw {
                         div()
                             .flex_1()
                             .relative()
+                            .bg(theme.elevated)
                             .child(
                                 div()
                                     .flex()
@@ -194,15 +199,19 @@ impl Render for Daw {
                                     .child(
                                         div()
                                             .h(px(20.))
-                                            .bg(rgb(0xE8E8E8))
+                                            .bg(theme.elevated)
                                             .border_b_1()
-                                            .border_color(rgb(0x000000)),
+                                            .border_l_1()
+                                            .border_color(theme.border),
                                     )
-                                    .children(self.tracks.iter().map(|track| {
+                                    .children(self.tracks.iter().enumerate().map(|(i, track)| {
+                                        let track_color = theme.track_colors[i % theme.track_colors.len()];
+                                        let text_color = to_dark_variant(track_color);
                                         div()
                                             .h(px(80.))
+                                            .bg(track_color)
                                             .border_b_1()
-                                            .border_color(black())
+                                            .border_color(theme.border)
                                             .border_l_1()
                                             .p_2()
                                             .flex()
@@ -210,6 +219,7 @@ impl Render for Daw {
                                             .child(
                                                 div()
                                                     .text_sm()
+                                                    .text_color(text_color)
                                                     .child(format!("Track {}", track.id.0)),
                                             )
                                     })),
@@ -246,6 +256,8 @@ actions!(daw, [PlayPause, Quit]);
 
 fn main() {
     Application::new().run(|cx: &mut App| {
+        theme::init(cx);
+
         cx.on_action(|_: &Quit, cx: &mut App| {
             cx.quit();
         });
