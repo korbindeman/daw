@@ -1,13 +1,16 @@
-mod beats;
+mod keybindings;
 mod ui;
 
 use daw_engine as engine;
+use daw_project::load_project;
 use daw_transport::Command;
 use daw_transport::Status;
 use gpui::{
-    App, Application, Context, Entity, Timer, Window, WindowOptions, black, div, prelude::*, px,
-    rgb,
+    App, Application, Context, Entity, FocusHandle, Timer, Window, WindowOptions, actions, black,
+    div, prelude::*, px, rgb,
 };
+use keybindings::keybindings;
+use std::path::Path;
 use std::time::Duration;
 use ui::{Header, HeaderEvent, Playhead, Sidebar, TimelineRuler, Track};
 
@@ -20,13 +23,17 @@ struct Daw {
     pixels_per_beat: f64,
     header_handle: Entity<Header>,
     playhead_handle: Entity<Playhead>,
+    focus_handle: FocusHandle,
 }
 
 impl Daw {
     fn new(cx: &mut Context<Self>) -> Self {
-        let time_signature = (4, 4);
-        let tracks = beats::four_on_the_floor();
-        let bpm = 120.0;
+        let project = load_project(Path::new("projects/beat_1.dawproj"))
+            .expect("Failed to load default project");
+
+        let time_signature = project.time_signature;
+        let tracks = project.tracks;
+        let bpm = project.tempo;
         let pixels_per_beat = 100.0;
         let engine_handle = engine::start(tracks.clone(), bpm).unwrap();
 
@@ -64,6 +71,8 @@ impl Daw {
         )
         .detach();
 
+        let focus_handle = cx.focus_handle();
+
         Self {
             tracks,
             engine_handle,
@@ -73,6 +82,7 @@ impl Daw {
             pixels_per_beat,
             header_handle: header,
             playhead_handle: playhead,
+            focus_handle,
         }
     }
 
@@ -115,11 +125,29 @@ impl Render for Daw {
         // Calculate timeline width based on furthest clip end
         let timeline_width = self.calculate_timeline_width();
 
+        let header_handle = self.header_handle.clone();
+
         div()
+            .id("root")
             .size_full()
             .bg(rgb(0xD3D0D1))
             .flex()
             .flex_col()
+            .track_focus(&self.focus_handle)
+            .on_action(cx.listener(move |this, _: &PlayPause, _, cx| {
+                println!("PlayPause action triggered!");
+                let is_playing = this.header_handle.read(cx).playing;
+                println!("Current playing state: {}", is_playing);
+                header_handle.update(cx, |_, cx| {
+                    if is_playing {
+                        println!("Emitting Pause event");
+                        cx.emit(HeaderEvent::Pause);
+                    } else {
+                        println!("Emitting Play event");
+                        cx.emit(HeaderEvent::Play);
+                    }
+                });
+            }))
             .child(self.header_handle.clone())
             .child(
                 div()
@@ -218,10 +246,23 @@ impl Daw {
     }
 }
 
+actions!(daw, [PlayPause, Quit]);
+
 fn main() {
     Application::new().run(|cx: &mut App| {
-        let _window = cx
-            .open_window(WindowOptions::default(), |_, cx| cx.new(|cx| Daw::new(cx)))
+        cx.on_action(|_: &Quit, cx: &mut App| {
+            println!("Quit action triggered!");
+            cx.quit();
+        });
+
+        let bindings = keybindings();
+        println!("Registering {} keybindings", bindings.len());
+        for binding in &bindings {
+            println!("  Binding: {:?}", binding);
+        }
+        cx.bind_keys(bindings);
+
+        cx.open_window(WindowOptions::default(), |_, cx| cx.new(|cx| Daw::new(cx)))
             .unwrap();
     });
 }

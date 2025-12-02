@@ -5,7 +5,7 @@ pub struct Header {
     current_tick: u64,
     time_signature: (u32, u32),
     bpm: f64,
-    playing: bool,
+    pub playing: bool,
 }
 
 pub enum HeaderEvent {
