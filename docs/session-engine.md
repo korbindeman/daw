@@ -8,74 +8,109 @@ The DAW uses a lock-free architecture for real-time audio. The `Session` (in `da
 ┌─────────────────────────────────────────┐
 │              UI Thread                  │
 │         (App / Session)                 │
+│                                         │
+│   Stores: Ticks (musical time)          │
+│   Converts: Ticks → Samples             │
 └──────────────────┬──────────────────────┘
                    │
          ┌─────────┴─────────┐
          │                   │
     rtrb queues         basedrop
-    (Commands)       (Tracks, Tempo)
+    (Commands)       (EngineTrack)
          │                   │
          └─────────┬─────────┘
                    ▼
 ┌─────────────────────────────────────────┐
 │            Audio Thread                 │
 │              (Engine)                   │
+│                                         │
+│   Works in: Samples only                │
+│   No tempo/BPM knowledge                │
 └─────────────────────────────────────────┘
+```
+
+## Key Design Principle: Sample-Based Engine
+
+The engine is **tempo-agnostic**. It only understands sample positions:
+
+- **Core** stores clip positions in **ticks** (musical time, tempo-independent)
+- **Core** converts ticks → samples before sending to engine
+- **Engine** receives `EngineTrack`/`EngineClip` with **sample positions**
+- **Engine** reports position back in **samples**
+- **Core** converts samples → ticks for UI display
+
+When tempo changes, core re-converts all positions and sends updated tracks to the engine.
+
+## Data Types
+
+### Core (Musical Time)
+```rust
+// daw_transport
+struct Clip {
+    start: u64,  // ticks
+    audio: Arc<AudioBuffer>,
+}
+
+struct Track {
+    clips: Vec<Clip>,
+}
+```
+
+### Engine (Sample Time)
+```rust
+// daw_engine
+struct EngineClip {
+    start: u64,  // samples
+    audio: Arc<AudioBuffer>,
+}
+
+struct EngineTrack {
+    clips: Vec<EngineClip>,
+}
 ```
 
 ## Communication Channels
 
 | Channel | Direction | Type | Purpose |
 |---------|-----------|------|---------|
-| `commands` | UI → Engine | `rtrb` queue | Play, Pause, Seek |
-| `status` | Engine → UI | `rtrb` queue | Position updates |
+| `commands` | UI → Engine | `rtrb` queue | Play, Pause, Seek (in samples) |
+| `status` | Engine → UI | `rtrb` queue | Position updates (in samples) |
 | `tracks` | UI → Engine | `rtrb` + basedrop | Track/clip updates |
-| `tempo` | UI → Engine | `rtrb` + basedrop | Tempo changes |
 
 ## Updating the Engine
 
 ### Playback Control
 
-Simple commands use the `rtrb` queue directly:
-
 ```rust
-// Play
-session.play();
+session.play();   // sends EngineCommand::Play
+session.pause();  // sends EngineCommand::Pause
+session.stop();   // pause + seek to sample 0
 
-// Pause
-session.pause();
-
-// Stop (pause + seek to 0)
-session.stop();
-
-// Seek to tick position
+// Seek to tick - Session converts to samples internally
 session.seek(tick);
 ```
 
 ### Updating Tracks
 
-When tracks or clips change (add, remove, move, trim), call `update_tracks()`:
+When tracks or clips change, call `update_tracks()`:
 
 ```rust
-// Modify tracks in session
+// Modify tracks in session (tick-based)
 session.tracks_mut().push(new_track);
-// or modify existing clips...
 
-// Send to engine (lock-free)
+// Send to engine (converted to samples, lock-free)
 session.update_tracks();
 ```
 
-This creates a new `Shared<Vec<Track>>` via basedrop and sends it through the queue. The audio thread swaps it in without blocking.
-
 ### Updating Tempo
 
-When tempo changes, call `update_tempo()`:
+When tempo changes, call `update_tempo()`. This re-converts all clip positions to the new sample positions:
 
 ```rust
 // Change tempo in session
 session.time_context_mut().tempo = 140.0;
 
-// Send to engine (lock-free)
+// Re-send tracks with new sample positions
 session.update_tempo();
 ```
 
@@ -83,13 +118,13 @@ session.update_tempo();
 
 The session must be polled periodically to:
 
-1. **Collect garbage**: basedrop defers deallocation to avoid blocking the audio thread. `poll()` calls `collector.collect()` to free old data.
-2. **Read status**: Get the current playback position from the engine.
+1. **Collect garbage**: basedrop defers deallocation. `poll()` calls `collector.collect()`.
+2. **Read status**: Get current position (in samples), convert to ticks.
 
 ```rust
-// Returns Some(tick) if position changed, None otherwise
+// Returns Some(tick) if position changed
 if let Some(tick) = session.poll() {
-    // Update UI playhead position
+    update_playhead_ui(tick);
 }
 ```
 
@@ -108,7 +143,6 @@ Example setup with GPUI:
 cx.spawn(async move {
     loop {
         Timer::after(Duration::from_millis(16)).await;
-        // Update session entity, which calls poll()
         session_entity.update(cx, |session, cx| {
             session.poll();
             cx.notify();
@@ -116,12 +150,6 @@ cx.spawn(async move {
     }
 });
 ```
-
-### Why Polling Matters
-
-- **Too infrequent** (e.g., 200ms): Playhead jumps, delayed garbage collection may cause memory buildup
-- **Too frequent** (e.g., 1ms): Wastes CPU cycles with no visual benefit
-- **60 Hz**: Good balance for smooth UI without excessive overhead
 
 ## Memory Management with Basedrop
 
@@ -131,30 +159,29 @@ cx.spawn(async move {
 - `Collector`: Collects dropped `Shared` values for later deallocation
 - `Handle`: Used to create new `Shared` values
 
-When you send new tracks/tempo to the engine:
+When you send new tracks to the engine:
 
-1. New `Shared<T>` is created via the `Handle`
-2. Sent through `rtrb` queue (lock-free)
-3. Audio thread swaps in new value, drops old `Shared`
-4. Old data is queued for collection (not freed yet)
-5. Next `poll()` calls `collector.collect()` to actually free memory
-
-This ensures the audio thread never blocks on allocation or deallocation.
+1. Session converts `Track` → `EngineTrack` (ticks → samples)
+2. New `Shared<Vec<EngineTrack>>` is created via the `Handle`
+3. Sent through `rtrb` queue (lock-free)
+4. Audio thread swaps in new value, drops old `Shared`
+5. Old data is queued for collection (not freed yet)
+6. Next `poll()` calls `collector.collect()` to actually free memory
 
 ## Complete Example
 
 ```rust
 use daw_core::Session;
 
-// Create session
+// Create session (tracks use tick positions)
 let mut session = Session::new(tracks, 120.0, (4, 4))?;
 
 // Start playback
 session.play();
 
-// In your main loop (60 Hz):
+// Main loop (60 Hz):
 loop {
-    // Poll for position updates and garbage collection
+    // Poll for position updates (returns ticks) and garbage collection
     if let Some(tick) = session.poll() {
         update_playhead_ui(tick);
     }
@@ -162,12 +189,12 @@ loop {
     // Handle user input
     if user_changed_tempo {
         session.time_context_mut().tempo = new_tempo;
-        session.update_tempo();
+        session.update_tempo();  // re-converts all positions
     }
 
     if user_added_clip {
-        // Modify tracks...
-        session.update_tracks();
+        // Modify tracks (tick-based)...
+        session.update_tracks();  // converts to samples, sends to engine
     }
 
     sleep(Duration::from_millis(16));
@@ -183,3 +210,11 @@ loop {
 | `update_tracks()` | Yes | No |
 | `update_tempo()` | Yes | No |
 | `poll()` | No (call from UI thread only) | No |
+
+## Sample Rate
+
+The engine exposes its sample rate (from CPAL) via `session.sample_rate()`. This is used internally for tick↔sample conversion but is also available if needed:
+
+```rust
+let sample_rate = session.sample_rate();  // e.g., 44100 or 48000
+```

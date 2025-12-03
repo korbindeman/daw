@@ -1,11 +1,12 @@
 use std::path::Path;
 
-use crate::time::{TimeContext, TimeSignature};
 use basedrop::Shared;
-use daw_engine::AudioEngineHandle;
+
+use crate::time::{TimeContext, TimeSignature};
+use daw_engine::{AudioEngineHandle, EngineClip, EngineCommand, EngineStatus, EngineTrack};
 use daw_project::load_project;
 use daw_render::{render_timeline, write_wav};
-use daw_transport::{Command, PPQN, Status, Track};
+use daw_transport::{Track, PPQN};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaybackState {
@@ -34,16 +35,25 @@ impl Session {
         tempo: f64,
         time_signature: impl Into<TimeSignature>,
     ) -> anyhow::Result<Self> {
-        let time_signature = time_signature.into();
-        let engine = daw_engine::start(tracks.clone(), tempo)?;
+        let time_context = TimeContext::new(tempo, time_signature.into(), 100.0);
 
-        Ok(Self {
+        // Convert tracks to engine format (ticks -> samples)
+        // Use a placeholder sample rate; we'll get the real one after engine starts
+        let engine = daw_engine::start(vec![])?;
+        let sample_rate = engine.sample_rate;
+
+        let mut session = Self {
             engine,
             tracks,
-            time_context: TimeContext::new(tempo, time_signature, 100.0),
+            time_context,
             current_tick: 0,
             playback_state: PlaybackState::Stopped,
-        })
+        };
+
+        // Now send the real tracks with correct sample rate conversion
+        session.send_tracks_to_engine(sample_rate);
+
+        Ok(session)
     }
 
     pub fn from_project(path: &Path) -> anyhow::Result<Self> {
@@ -52,24 +62,25 @@ impl Session {
     }
 
     pub fn play(&mut self) {
-        let _ = self.engine.commands.push(Command::Play);
+        let _ = self.engine.commands.push(EngineCommand::Play);
         self.playback_state = PlaybackState::Playing;
     }
 
     pub fn pause(&mut self) {
-        let _ = self.engine.commands.push(Command::Pause);
+        let _ = self.engine.commands.push(EngineCommand::Pause);
         self.playback_state = PlaybackState::Paused;
     }
 
     pub fn stop(&mut self) {
-        let _ = self.engine.commands.push(Command::Pause);
-        let _ = self.engine.commands.push(Command::Seek { tick: 0 });
+        let _ = self.engine.commands.push(EngineCommand::Pause);
+        let _ = self.engine.commands.push(EngineCommand::Seek { sample: 0 });
         self.current_tick = 0;
         self.playback_state = PlaybackState::Stopped;
     }
 
     pub fn seek(&mut self, tick: u64) {
-        let _ = self.engine.commands.push(Command::Seek { tick });
+        let sample = self.ticks_to_samples(tick);
+        let _ = self.engine.commands.push(EngineCommand::Seek { sample });
         self.current_tick = tick;
     }
 
@@ -80,7 +91,8 @@ impl Session {
         let mut position_changed = None;
         while let Ok(status) = self.engine.status.pop() {
             match status {
-                Status::Position(tick) => {
+                EngineStatus::Position(sample) => {
+                    let tick = self.samples_to_ticks(sample);
                     self.current_tick = tick;
                     position_changed = Some(tick);
                 }
@@ -90,15 +102,48 @@ impl Session {
     }
 
     /// Send updated tracks to the audio engine (lock-free)
+    /// Converts tick positions to sample positions
     pub fn update_tracks(&mut self) {
-        let new_tracks = Shared::new(&self.engine.handle, self.tracks.clone());
-        let _ = self.engine.tracks.push(new_tracks);
+        self.send_tracks_to_engine(self.engine.sample_rate);
     }
 
-    /// Send updated tempo to the audio engine (lock-free)
+    /// When tempo changes, re-send tracks with new sample positions
     pub fn update_tempo(&mut self) {
-        let new_tempo = Shared::new(&self.engine.handle, self.time_context.tempo);
-        let _ = self.engine.tempo.push(new_tempo);
+        self.send_tracks_to_engine(self.engine.sample_rate);
+    }
+
+    fn send_tracks_to_engine(&mut self, sample_rate: u32) {
+        let engine_tracks = self.convert_tracks_for_engine(sample_rate);
+        let shared_tracks = Shared::new(&self.engine.handle, engine_tracks);
+        let _ = self.engine.tracks.push(shared_tracks);
+    }
+
+    fn convert_tracks_for_engine(&self, sample_rate: u32) -> Vec<EngineTrack> {
+        self.tracks
+            .iter()
+            .map(|track| EngineTrack {
+                clips: track
+                    .clips
+                    .iter()
+                    .map(|clip| EngineClip {
+                        start: self.ticks_to_samples_with_rate(clip.start, sample_rate),
+                        audio: clip.audio.clone(),
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+
+    fn ticks_to_samples(&self, ticks: u64) -> u64 {
+        self.time_context.ticks_to_samples(ticks, self.engine.sample_rate)
+    }
+
+    fn ticks_to_samples_with_rate(&self, ticks: u64, sample_rate: u32) -> u64 {
+        self.time_context.ticks_to_samples(ticks, sample_rate)
+    }
+
+    fn samples_to_ticks(&self, samples: u64) -> u64 {
+        self.time_context.samples_to_ticks(samples, self.engine.sample_rate)
     }
 
     pub fn current_tick(&self) -> u64 {
@@ -135,6 +180,10 @@ impl Session {
 
     pub fn tracks_mut(&mut self) -> &mut Vec<Track> {
         &mut self.tracks
+    }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.engine.sample_rate
     }
 
     pub fn calculate_timeline_width(&self) -> f64 {

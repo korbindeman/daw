@@ -5,8 +5,6 @@ edition.workspace = true
 
 [dependencies]
 daw_core = { path = "../core" }
-daw_render = { path = "../render" }
-daw_transport = { path = "../transport" }
 gpui = "*"
 anyhow = "1.0"
 rfd = "0.16"

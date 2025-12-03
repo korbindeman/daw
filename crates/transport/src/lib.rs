@@ -52,21 +52,10 @@ impl WaveformData {
     }
 }
 
-#[derive(Debug)]
-pub enum Command {
-    Play,
-    Pause,
-    Seek { tick: u64 },
-}
-
-#[derive(Debug)]
-pub enum Status {
-    Position(u64),
-}
-
 #[derive(Debug, Clone)]
 pub struct Clip {
     pub id: ClipId,
+    pub name: String,
     pub start: u64, // tick position on timeline
     pub audio: Arc<AudioBuffer>,
     pub waveform: Arc<WaveformData>,
@@ -80,7 +69,7 @@ impl Clip {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClipId(pub u64);
 
 #[derive(Debug, Clone)]

@@ -1,6 +1,6 @@
 use crate::theme::ActiveTheme;
 use crate::ui::primitives::Input;
-use daw_transport::PPQN;
+use daw_core::PPQN;
 use gpui::{Context, Entity, EventEmitter, FocusHandle, Focusable, Window, div, prelude::*, px};
 
 pub struct Header {

@@ -4,7 +4,7 @@ mod theme;
 mod ui;
 
 use app_menus::{OpenProject, RenderProject, app_menus};
-use daw_core::Session;
+use daw_core::{ClipId, Session};
 use gpui::{
     App, Application, Context, Entity, FocusHandle, Timer, Window, WindowOptions, actions, div,
     prelude::*, px,
@@ -13,7 +13,7 @@ use keybindings::keybindings;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use theme::ActiveTheme;
-use ui::{Header, HeaderEvent, Playhead, Sidebar, TimelineRuler, Track, TrackLabels};
+use ui::{Header, HeaderEvent, Playhead, Sidebar, TimelineRuler, Track, TrackEvent, TrackLabels};
 
 struct Daw {
     session: Session,
@@ -21,6 +21,7 @@ struct Daw {
     playhead_handle: Entity<Playhead>,
     focus_handle: FocusHandle,
     project_path: PathBuf,
+    selected_clips: Vec<ClipId>,
 }
 
 impl Daw {
@@ -73,6 +74,7 @@ impl Daw {
             playhead_handle: playhead,
             focus_handle,
             project_path: path.to_path_buf(),
+            selected_clips: Vec::new(),
         }
     }
 
@@ -88,6 +90,7 @@ impl Daw {
                 // Update session
                 self.session = session;
                 self.project_path = path;
+                self.selected_clips.clear();
 
                 // Update header
                 self.header_handle.update(cx, |header, cx| {
@@ -107,6 +110,15 @@ impl Daw {
                 eprintln!("Failed to load project: {}", e);
             }
         }
+    }
+
+    fn toggle_clip_selection(&mut self, clip_id: ClipId, cx: &mut Context<Self>) {
+        // For now, just single selection - clear and select the clicked clip
+        println!("Clip clicked! ClipId: {:?}", clip_id);
+        self.selected_clips.clear();
+        self.selected_clips.push(clip_id.clone());
+        println!("Selected clips: {:?}", self.selected_clips);
+        cx.notify();
     }
 
     fn poll_status(&mut self, cx: &mut Context<Self>) {
@@ -203,8 +215,8 @@ impl Render for Daw {
 
                         if let Some(file) = file {
                             let path = file.path().to_path_buf();
-                            let buffer = daw_render::render_timeline(&tracks, tempo, 44100, 2);
-                            if let Err(e) = daw_render::write_wav(&buffer, &path) {
+                            let buffer = daw_core::render_timeline(&tracks, tempo, 44100, 2);
+                            if let Err(e) = daw_core::write_wav(&buffer, &path) {
                                 eprintln!("Failed to render: {}", e);
                             }
                         }
@@ -240,22 +252,47 @@ impl Render for Daw {
                                             timeline_width,
                                         )
                                     }))
-                                    .child(
-                                        div()
+                                    .child({
+                                        let selected_clips = self.selected_clips.clone();
+                                        let tracks_and_playhead = div()
                                             .flex_1()
                                             .relative()
-                                            .child(self.playhead_handle.clone())
                                             .children(tracks.iter().map(|track| {
-                                                cx.new(|_| {
+                                                let selected_clips = selected_clips.clone();
+                                                let track_entity = cx.new(|_| {
                                                     Track::new(
                                                         track.clone(),
                                                         pixels_per_beat,
                                                         self.session.tempo(),
                                                         timeline_width,
                                                     )
-                                                })
-                                            })),
-                                    ),
+                                                    .selected_clips(selected_clips)
+                                                });
+
+                                                cx.subscribe(
+                                                    &track_entity,
+                                                    |this, _track, event: &TrackEvent, cx| {
+                                                        println!(
+                                                            "Track event received: {:?}",
+                                                            event
+                                                        );
+                                                        match event {
+                                                            TrackEvent::ClipClicked(clip_id) => {
+                                                                this.toggle_clip_selection(
+                                                                    clip_id.clone(),
+                                                                    cx,
+                                                                );
+                                                            }
+                                                        }
+                                                    },
+                                                )
+                                                .detach();
+
+                                                track_entity
+                                            }));
+
+                                        tracks_and_playhead.child(self.playhead_handle.clone())
+                                    }),
                             )
                             .child(cx.new(|_| TrackLabels::new(tracks.to_vec()))),
                     ),

@@ -1,15 +1,24 @@
 use crate::theme::{ActiveTheme, to_dark_variant};
-use daw_transport::{Clip, PPQN, Track as TransportTrack, WaveformData};
+use daw_core::{Clip, ClipId, PPQN, Track as TransportTrack, WaveformData};
 use gpui::{
-    Bounds, Context, ElementId, Hsla, Point, Size, Window, canvas, div, fill, prelude::*, px,
+    App, Bounds, Context, CursorStyle, ElementId, EventEmitter, Hsla, Point, Size, Window, canvas,
+    div, fill, prelude::*, px,
 };
 use std::sync::Arc;
+
+#[derive(Debug)]
+pub enum TrackEvent {
+    ClipClicked(ClipId),
+}
+
+impl EventEmitter<TrackEvent> for Track {}
 
 pub struct Track {
     track: TransportTrack,
     pixels_per_beat: f64,
     tempo: f64,
     timeline_width: f64,
+    selected_clips: Vec<ClipId>,
 }
 
 impl Track {
@@ -24,7 +33,13 @@ impl Track {
             pixels_per_beat,
             tempo,
             timeline_width,
+            selected_clips: Vec::new(),
         }
+    }
+
+    pub fn selected_clips(mut self, selected_clips: Vec<ClipId>) -> Self {
+        self.selected_clips = selected_clips;
+        self
     }
 }
 
@@ -36,6 +51,8 @@ impl Render for Track {
         // High contrast waveform: dark version of the track color (like #392838 vs #BE8CB9)
         let waveform_color = to_dark_variant(track_color);
 
+        let selected_clips = self.selected_clips.clone();
+
         let clips: Vec<_> = self
             .track
             .clips
@@ -44,8 +61,24 @@ impl Render for Track {
                 let start_px = (clip.start as f64 / PPQN as f64) * self.pixels_per_beat;
                 let duration_ticks = clip.duration_ticks(self.tempo);
                 let width_px = (duration_ticks as f64 / PPQN as f64) * self.pixels_per_beat;
+                let is_selected = selected_clips.contains(&clip.id);
+                let clip_id = clip.id.clone();
 
-                render_clip(clip, start_px, width_px, track_color, waveform_color)
+                render_clip(
+                    clip,
+                    start_px,
+                    width_px,
+                    track_color,
+                    waveform_color,
+                    is_selected,
+                )
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(move |_track, _event, _window, cx| {
+                        println!("MOUSE DOWN DETECTED on clip {:?}!", clip_id);
+                        cx.emit(TrackEvent::ClipClicked(clip_id.clone()));
+                    }),
+                )
             })
             .collect();
 
@@ -74,8 +107,17 @@ fn render_clip(
     width_px: f64,
     bg_color: Hsla,
     waveform_color: Hsla,
-) -> impl IntoElement {
+    is_selected: bool,
+) -> gpui::Div {
     let waveform = clip.waveform.clone();
+    let clip_name = clip.name.clone();
+
+    // When selected, flip the colors
+    let (final_bg_color, final_waveform_color) = if is_selected {
+        (waveform_color, bg_color)
+    } else {
+        (bg_color, waveform_color)
+    };
 
     div()
         .absolute()
@@ -83,11 +125,36 @@ fn render_clip(
         .top(px(4.))
         .w(px(width_px as f32))
         .h(px(72.))
-        .bg(bg_color)
+        .bg(final_bg_color)
         .border_1()
-        .border_color(darken(bg_color, 0.2))
+        .border_color(darken(final_bg_color, 0.2))
         .overflow_hidden()
-        .child(render_waveform(waveform, waveform_color))
+        .flex()
+        .flex_col()
+        .child(
+            // Clickable label bar at the top
+            div()
+                .w_full()
+                .h(px(16.))
+                .bg(darken(final_bg_color, 0.1))
+                .px_1()
+                .flex()
+                .items_center()
+                .cursor(CursorStyle::PointingHand)
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(final_waveform_color)
+                        .child(clip_name),
+                ),
+        )
+        .child(
+            // Waveform area
+            div()
+                .flex_1()
+                .w_full()
+                .child(render_waveform(waveform, final_waveform_color)),
+        )
 }
 
 fn render_waveform(waveform: Arc<WaveformData>, color: Hsla) -> impl IntoElement {

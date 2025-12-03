@@ -26,6 +26,7 @@ pub fn save_project(
                     .iter()
                     .map(|clip| ClipData {
                         id: clip.id.0,
+                        name: clip.name.clone(),
                         start: clip.start,
                         audio_path: audio_paths.get(&clip.id.0).cloned().unwrap_or_default(),
                     })
@@ -64,12 +65,14 @@ mod tests {
             clips: vec![
                 Clip {
                     id: ClipId(100),
+                    name: "Kick".to_string(),
                     start: 0,
                     audio: audio.clone(),
                     waveform: waveform.clone(),
                 },
                 Clip {
                     id: ClipId(101),
+                    name: "Snare".to_string(),
                     start: 960,
                     audio: audio.clone(),
                     waveform: waveform.clone(),
@@ -171,6 +174,7 @@ mod tests {
             name: "Missing Path Track".to_string(),
             clips: vec![Clip {
                 id: ClipId(999),
+                name: "Missing Path Clip".to_string(),
                 start: 0,
                 audio,
                 waveform,

@@ -140,6 +140,7 @@ impl SequencerApp {
                 let audio = track.audio.as_ref()?;
 
                 let mut clips: Vec<Clip> = Vec::new();
+                let mut clip_num = 1;
 
                 // Duplicate the 16-step pattern loop_count times
                 for loop_idx in 0..self.loop_count {
@@ -153,10 +154,12 @@ impl SequencerApp {
                                 + step_idx) as u64;
                             clips.push(Clip {
                                 id: ClipId(clip_id),
+                                name: format!("{} {}", track.sample_name, clip_num),
                                 start: bar_offset + (step_idx as u64) * ticks_per_step,
                                 audio: audio.clone(),
                                 waveform: Arc::new(waveform),
                             });
+                            clip_num += 1;
                         }
                     }
                 }
@@ -226,6 +229,7 @@ impl SequencerApp {
                 let sample_path = track.sample_path.as_ref()?;
 
                 let mut clips: Vec<Clip> = Vec::new();
+                let mut clip_num = 1;
 
                 // Duplicate the 16-step pattern loop_count times
                 for loop_idx in 0..self.loop_count {
@@ -241,10 +245,12 @@ impl SequencerApp {
                             let waveform = WaveformData::from_audio_buffer(audio, 512);
                             clips.push(Clip {
                                 id: ClipId(clip_id),
+                                name: format!("{} {}", track.sample_name, clip_num),
                                 start: bar_offset + (step_idx as u64) * ticks_per_step,
                                 audio: audio.clone(),
                                 waveform: Arc::new(waveform),
                             });
+                            clip_num += 1;
                         }
                     }
                 }

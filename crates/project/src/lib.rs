@@ -27,6 +27,7 @@ pub struct ClipData {
     pub id: u64,
     pub start: u64,
     pub audio_path: PathBuf,
+    pub name: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -66,11 +67,13 @@ mod tests {
                             id: 100,
                             start: 0,
                             audio_path: PathBuf::from("audio/kick.wav"),
+                            name: "Kick".to_string(),
                         },
                         ClipData {
                             id: 101,
                             start: 960,
                             audio_path: PathBuf::from("audio/snare.wav"),
+                            name: "Snare".to_string(),
                         },
                     ],
                 },
@@ -81,6 +84,7 @@ mod tests {
                         id: 200,
                         start: 480,
                         audio_path: PathBuf::from("audio/hihat.wav"),
+                        name: "Hi-Hat".to_string(),
                     }],
                 },
             ],
@@ -109,6 +113,7 @@ mod tests {
                 id: 1,
                 start: 1920,
                 audio_path: PathBuf::from("samples/test.wav"),
+                name: "Test".to_string(),
             }],
         };
 
@@ -131,6 +136,7 @@ mod tests {
             id: 99,
             start: 4800,
             audio_path: PathBuf::from("/absolute/path/to/audio.wav"),
+            name: "Audio".to_string(),
         };
 
         let bytes = rmp_serde::encode::to_vec(&clip).expect("serialize");

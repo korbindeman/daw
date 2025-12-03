@@ -1,5 +1,5 @@
 use crate::theme::ActiveTheme;
-use daw_transport::PPQN;
+use daw_core::PPQN;
 use gpui::{Context, Window, div, prelude::*, px};
 
 pub struct Playhead {

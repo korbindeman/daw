@@ -1,4 +1,4 @@
-use daw_transport::Track;
+use daw_core::Track;
 use gpui::{Context, IntoElement, Render, Window, div, prelude::*, px};
 
 use crate::theme::{ActiveTheme, to_dark_variant};

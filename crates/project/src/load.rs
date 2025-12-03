@@ -45,6 +45,7 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
     let reader = BufReader::new(file);
     let project: Project = rmp_serde::decode::from_read(reader)?;
 
+    let project_dir = path.parent().unwrap_or(Path::new("."));
     let mut tracks = Vec::new();
     let mut audio_paths = HashMap::new();
 
@@ -52,12 +53,18 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
         let mut clips = Vec::new();
 
         for clip_data in &track_data.clips {
-            let audio_buffer = daw_decode::decode_file(&clip_data.audio_path).map_err(|e| {
-                ProjectError::AudioDecode {
+            // Resolve relative paths relative to the project file directory
+            let audio_path = if clip_data.audio_path.is_relative() {
+                project_dir.join(&clip_data.audio_path)
+            } else {
+                clip_data.audio_path.clone()
+            };
+
+            let audio_buffer =
+                daw_decode::decode_file(&audio_path).map_err(|e| ProjectError::AudioDecode {
                     path: clip_data.audio_path.clone(),
                     source: e,
-                }
-            })?;
+                })?;
 
             audio_paths.insert(clip_data.id, clip_data.audio_path.clone());
 
@@ -65,6 +72,7 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
 
             clips.push(Clip {
                 id: ClipId(clip_data.id),
+                name: clip_data.name.clone(),
                 start: clip_data.start,
                 audio: Arc::new(audio_buffer),
                 waveform: Arc::new(waveform),
@@ -156,6 +164,7 @@ mod tests {
             name: "Roundtrip Track".to_string(),
             clips: vec![Clip {
                 id: ClipId(100),
+                name: "Test Clip".to_string(),
                 start: 960,
                 audio,
                 waveform,
@@ -208,6 +217,7 @@ mod tests {
                     id: 100,
                     start: 0,
                     audio_path: PathBuf::from("audio/sample.wav"),
+                    name: "Sample Clip".to_string(),
                 }],
             }],
         };
@@ -241,6 +251,7 @@ mod tests {
                     id: 100,
                     start: 0,
                     audio_path: PathBuf::from("nonexistent.wav"),
+                    name: "Missing Clip".to_string(),
                 }],
             }],
         };
