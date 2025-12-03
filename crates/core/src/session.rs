@@ -1,10 +1,11 @@
 use std::path::Path;
 
 use crate::time::{TimeContext, TimeSignature};
+use basedrop::Shared;
 use daw_engine::AudioEngineHandle;
 use daw_project::load_project;
 use daw_render::{render_timeline, write_wav};
-use daw_transport::{Command, Status, Track, PPQN};
+use daw_transport::{Command, PPQN, Status, Track};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaybackState {
@@ -28,7 +29,11 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(tracks: Vec<Track>, tempo: f64, time_signature: impl Into<TimeSignature>) -> anyhow::Result<Self> {
+    pub fn new(
+        tracks: Vec<Track>,
+        tempo: f64,
+        time_signature: impl Into<TimeSignature>,
+    ) -> anyhow::Result<Self> {
         let time_signature = time_signature.into();
         let engine = daw_engine::start(tracks.clone(), tempo)?;
 
@@ -69,6 +74,9 @@ impl Session {
     }
 
     pub fn poll(&mut self) -> Option<u64> {
+        // Free any old track data that the audio thread has dropped
+        self.engine.collector.collect();
+
         let mut position_changed = None;
         while let Ok(status) = self.engine.status.pop() {
             match status {
@@ -79,6 +87,18 @@ impl Session {
             }
         }
         position_changed
+    }
+
+    /// Send updated tracks to the audio engine (lock-free)
+    pub fn update_tracks(&mut self) {
+        let new_tracks = Shared::new(&self.engine.handle, self.tracks.clone());
+        let _ = self.engine.tracks.push(new_tracks);
+    }
+
+    /// Send updated tempo to the audio engine (lock-free)
+    pub fn update_tempo(&mut self) {
+        let new_tempo = Shared::new(&self.engine.handle, self.time_context.tempo);
+        let _ = self.engine.tempo.push(new_tempo);
     }
 
     pub fn current_tick(&self) -> u64 {
@@ -111,6 +131,10 @@ impl Session {
 
     pub fn tracks(&self) -> &[Track] {
         &self.tracks
+    }
+
+    pub fn tracks_mut(&mut self) -> &mut Vec<Track> {
+        &mut self.tracks
     }
 
     pub fn calculate_timeline_width(&self) -> f64 {

@@ -9,3 +9,4 @@ daw_project = { path = "../project" }
 daw_render = { path = "../render" }
 daw_transport = { path = "../transport" }
 anyhow = "1.0"
+basedrop = "0.1"

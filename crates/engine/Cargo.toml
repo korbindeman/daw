@@ -9,3 +9,4 @@ daw_transport = { path = "../transport" }
 cpal = "0.16"
 anyhow = "1.0"
 rtrb = "0.3"
+basedrop = "0.1"
