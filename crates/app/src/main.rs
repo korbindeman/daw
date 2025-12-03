@@ -12,8 +12,8 @@ use gpui::{
 use keybindings::keybindings;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use theme::{ActiveTheme, to_dark_variant};
-use ui::{Header, HeaderEvent, Playhead, Sidebar, TimelineRuler, Track};
+use theme::ActiveTheme;
+use ui::{Header, HeaderEvent, Playhead, Sidebar, TimelineRuler, Track, TrackLabels};
 
 struct Daw {
     session: Session,
@@ -223,11 +223,16 @@ impl Render for Daw {
                             .flex_1()
                             .relative()
                             .bg(theme.elevated)
+                            .overflow_hidden()
                             .child(
                                 div()
+                                    .absolute()
+                                    .top_0()
+                                    .left_0()
+                                    .right(px(150.))
+                                    .bottom_0()
                                     .flex()
                                     .flex_col()
-                                    .pr(px(150.))
                                     .child(cx.new(|_| {
                                         TimelineRuler::new(
                                             pixels_per_beat,
@@ -252,63 +257,7 @@ impl Render for Daw {
                                             })),
                                     ),
                             )
-                            .child(
-                                div()
-                                    .absolute()
-                                    .right(px(0.))
-                                    .top(px(0.))
-                                    .w(px(150.))
-                                    .flex()
-                                    .flex_col()
-                                    .child(
-                                        div()
-                                            .h(px(20.))
-                                            .bg(theme.elevated)
-                                            .border_b_1()
-                                            .border_l_1()
-                                            .border_color(theme.border),
-                                    )
-                                    .children(tracks.iter().enumerate().map(|(i, track)| {
-                                        let track_color =
-                                            theme.track_colors[i % theme.track_colors.len()];
-                                        let text_color = to_dark_variant(track_color);
-                                        div()
-                                            .h(px(80.))
-                                            .bg(track_color)
-                                            .border_b_1()
-                                            .border_color(theme.border)
-                                            .border_l_1()
-                                            .px_1()
-                                            .flex()
-                                            .flex_col()
-                                            .child(
-                                                div()
-                                                    .text_sm()
-                                                    .font_weight(gpui::FontWeight::BOLD)
-                                                    .text_color(text_color)
-                                                    .child(track.name.clone()),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(text_color.opacity(0.7))
-                                                    .child(
-                                                        track
-                                                            .clips
-                                                            .first()
-                                                            .map(|_| {
-                                                                format!(
-                                                                    "{} clip(s)",
-                                                                    track.clips.len()
-                                                                )
-                                                            })
-                                                            .unwrap_or_else(|| {
-                                                                "No clips".to_string()
-                                                            }),
-                                                    ),
-                                            )
-                                    })),
-                            ),
+                            .child(cx.new(|_| TrackLabels::new(tracks.to_vec()))),
                     ),
             )
     }
