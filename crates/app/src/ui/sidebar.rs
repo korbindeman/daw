@@ -1,24 +1,42 @@
 use crate::theme::ActiveTheme;
-use gpui::{div, prelude::*, px, Context, Window};
+use gpui::{Context, Window, div, prelude::*, px};
+use std::collections::BTreeMap;
 
 pub struct Sidebar {
-    samples: Vec<String>,
+    directories: BTreeMap<String, Vec<String>>,
 }
 
 impl Sidebar {
     pub fn new() -> Self {
-        let mut samples = Vec::new();
-        if let Ok(entries) = std::fs::read_dir("samples/cr78") {
+        let mut directories = BTreeMap::new();
+
+        if let Ok(entries) = std::fs::read_dir("samples") {
             for entry in entries.flatten() {
-                if let Some(name) = entry.file_name().to_str() {
-                    if name.ends_with(".wav") {
-                        samples.push(name.to_string());
+                if let Ok(file_type) = entry.file_type() {
+                    if file_type.is_dir() {
+                        if let Some(dir_name) = entry.file_name().to_str() {
+                            let mut samples = Vec::new();
+                            let dir_path = format!("samples/{}", dir_name);
+
+                            if let Ok(sample_entries) = std::fs::read_dir(&dir_path) {
+                                for sample_entry in sample_entries.flatten() {
+                                    if let Some(name) = sample_entry.file_name().to_str() {
+                                        if name.ends_with(".wav") {
+                                            samples.push(name.to_string());
+                                        }
+                                    }
+                                }
+                            }
+
+                            samples.sort();
+                            directories.insert(dir_name.to_string(), samples);
+                        }
                     }
                 }
             }
         }
-        samples.sort();
-        Self { samples }
+
+        Self { directories }
     }
 }
 
@@ -34,10 +52,27 @@ impl Render for Sidebar {
             .border_color(theme.border)
             .flex()
             .flex_col()
-            .gap_2()
+            .gap_3()
             .p_2()
-            .children(self.samples.iter().map(|sample| {
-                div().text_color(theme.text).child(sample.clone())
+            .children(self.directories.iter().map(|(dir_name, samples)| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_color(theme.text)
+                            .text_size(px(11.))
+                            .font_weight(gpui::FontWeight::BOLD)
+                            .child(dir_name.clone()),
+                    )
+                    .children(samples.iter().map(|sample| {
+                        div()
+                            .text_color(theme.text)
+                            .text_size(px(10.))
+                            .pl_2()
+                            .child(sample.clone())
+                    }))
             }))
     }
 }

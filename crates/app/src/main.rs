@@ -34,7 +34,7 @@ impl Daw {
         let time_signature = session.time_signature();
         let tempo = session.tempo();
 
-        let header = cx.new(|_| Header::new(0, time_signature.into(), tempo));
+        let header = cx.new(|cx| Header::new(0, time_signature.into(), tempo, cx));
         cx.subscribe(
             &header,
             |this, header, event: &HeaderEvent, cx| match event {

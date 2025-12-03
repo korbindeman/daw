@@ -9,4 +9,5 @@ daw_render = { path = "../render" }
 daw_transport = { path = "../transport" }
 gpui = "*"
 anyhow = "1.0"
-rfd = "0.15"
+rfd = "0.16"
+unicode-segmentation = "1.10"

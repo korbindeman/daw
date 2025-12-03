@@ -1,12 +1,17 @@
 use crate::theme::ActiveTheme;
+use crate::ui::primitives::Input;
 use daw_transport::PPQN;
-use gpui::{Context, EventEmitter, Window, div, prelude::*, px};
+use gpui::{Context, Entity, EventEmitter, FocusHandle, Focusable, Window, div, prelude::*, px};
 
 pub struct Header {
     current_tick: u64,
     time_signature: (u32, u32),
     bpm: f64,
     pub playing: bool,
+    bpm_input: Entity<Input>,
+    time_sig_numerator_input: Entity<Input>,
+    time_sig_denominator_input: Entity<Input>,
+    focus_handle: FocusHandle,
 }
 
 pub enum HeaderEvent {
@@ -18,12 +23,70 @@ pub enum HeaderEvent {
 impl EventEmitter<HeaderEvent> for Header {}
 
 impl Header {
-    pub fn new(current_tick: u64, time_signature: (u32, u32), bpm: f64) -> Self {
+    pub fn new(
+        current_tick: u64,
+        time_signature: (u32, u32),
+        bpm: f64,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let header_entity = cx.entity();
+
+        let bpm_input = cx.new(|cx| {
+            Input::new(cx.focus_handle())
+                .content(format!("{}", bpm))
+                .on_change(move |text, _window, cx| {
+                    if let Ok(new_bpm) = text.parse::<f64>() {
+                        if new_bpm > 0.0 && new_bpm <= 999.0 {
+                            let _ = header_entity.update(cx, |header, cx| {
+                                header.bpm = new_bpm;
+                                cx.notify();
+                            });
+                        }
+                    }
+                })
+        });
+
+        let header_entity_2 = cx.entity();
+        let time_sig_numerator_input = cx.new(|cx| {
+            Input::new(cx.focus_handle())
+                .content(format!("{}", time_signature.0))
+                .on_change(move |text, _window, cx| {
+                    if let Ok(new_num) = text.parse::<u32>() {
+                        if new_num > 0 && new_num <= 32 {
+                            let _ = header_entity_2.update(cx, |header, cx| {
+                                header.time_signature.0 = new_num;
+                                cx.notify();
+                            });
+                        }
+                    }
+                })
+        });
+
+        let header_entity_3 = cx.entity();
+        let time_sig_denominator_input = cx.new(|cx| {
+            Input::new(cx.focus_handle())
+                .content(format!("{}", time_signature.1))
+                .on_change(move |text, _window, cx| {
+                    if let Ok(new_denom) = text.parse::<u32>() {
+                        if new_denom > 0 && new_denom <= 32 {
+                            let _ = header_entity_3.update(cx, |header, cx| {
+                                header.time_signature.1 = new_denom;
+                                cx.notify();
+                            });
+                        }
+                    }
+                })
+        });
+
         Self {
             current_tick,
             time_signature,
             bpm,
             playing: false,
+            bpm_input,
+            time_sig_numerator_input,
+            time_sig_denominator_input,
+            focus_handle: cx.focus_handle(),
         }
     }
 
@@ -66,10 +129,16 @@ impl Header {
     }
 }
 
+impl Focusable for Header {
+    fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
 impl Render for Header {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let musical_time = self.format_musical_time(self.current_tick);
+        let (bar, beat, division) = self.ticks_to_musical_time(self.current_tick);
         let time_seconds = self.format_seconds(self.current_tick);
 
         div()
@@ -82,51 +151,163 @@ impl Render for Header {
             .gap_2()
             .p_2()
             .items_center()
+            .justify_between()
             .text_color(theme.background)
             .child(
                 div()
-                    .id("play-pause-button")
-                    .px_4()
-                    .py_2()
-                    .bg(theme.element)
-                    .border_1()
-                    .border_color(theme.border)
-                    .text_color(theme.text)
-                    .hover(|s| s.bg(theme.element_hover))
-                    .active(|s| s.bg(theme.element_active))
-                    .on_mouse_down(
-                        gpui::MouseButton::Left,
-                        cx.listener(|this, _, _, cx| {
-                            if this.playing {
-                                cx.emit(HeaderEvent::Pause);
-                            } else {
-                                cx.emit(HeaderEvent::Play);
-                            }
-                        }),
+                    .flex_1()
+                    .flex()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex()
+                            .gap_1()
+                            .items_center()
+                            .child(
+                                div()
+                                    .w(px(32.))
+                                    .bg(theme.background)
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .text_color(theme.text)
+                                    .child(self.time_sig_numerator_input.clone()),
+                            )
+                            .child(div().text_color(theme.text).child("/"))
+                            .child(
+                                div()
+                                    .w(px(32.))
+                                    .bg(theme.background)
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .text_color(theme.text)
+                                    .child(self.time_sig_denominator_input.clone()),
+                            ),
                     )
-                    .child(if self.playing { "Pause" } else { "Play" }),
+                    .child(
+                        div()
+                            .w(px(60.))
+                            .bg(theme.background)
+                            .border_1()
+                            .border_color(theme.border)
+                            .text_color(theme.text)
+                            .child(self.bpm_input.clone()),
+                    )
+                    .child(div().text_color(theme.text).child("BPM")),
             )
             .child(
                 div()
-                    .id("stop-button")
-                    .px_4()
-                    .py_2()
-                    .bg(theme.element)
-                    .border_1()
-                    .border_color(theme.border)
-                    .text_color(theme.text)
-                    .hover(|s| s.bg(theme.element_hover))
-                    .active(|s| s.bg(theme.element_active))
-                    .on_mouse_down(
-                        gpui::MouseButton::Left,
-                        cx.listener(|_, _, _, cx| {
-                            cx.emit(HeaderEvent::Stop);
-                        }),
+                    .flex()
+                    .items_center()
+                    .gap_4()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .w(px(32.))
+                                            .h(px(20.))
+                                            .px_1()
+                                            .bg(theme.background)
+                                            .border_1()
+                                            .border_color(theme.border)
+                                            .text_color(theme.text)
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .child(format!("{}", bar)),
+                                    )
+                                    .child(
+                                        div()
+                                            .w(px(32.))
+                                            .h(px(20.))
+                                            .px_1()
+                                            .bg(theme.background)
+                                            .border_1()
+                                            .border_color(theme.border)
+                                            .text_color(theme.text)
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .child(format!("{}", beat)),
+                                    )
+                                    .child(
+                                        div()
+                                            .w(px(32.))
+                                            .h(px(20.))
+                                            .px_1()
+                                            .bg(theme.background)
+                                            .border_1()
+                                            .border_color(theme.border)
+                                            .text_color(theme.text)
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .child(format!("{}", division)),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_color(theme.text)
+                                    .text_size(px(10.))
+                                    .child(time_seconds),
+                            ),
                     )
-                    .child("Stop"),
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .id("play-pause-button")
+                                    .px_4()
+                                    .py_2()
+                                    .bg(theme.element)
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .text_color(theme.text)
+                                    .hover(|s| s.bg(theme.element_hover))
+                                    .active(|s| s.bg(theme.element_active))
+                                    .on_mouse_down(
+                                        gpui::MouseButton::Left,
+                                        cx.listener(|this, _, _, cx| {
+                                            if this.playing {
+                                                cx.emit(HeaderEvent::Pause);
+                                            } else {
+                                                cx.emit(HeaderEvent::Play);
+                                            }
+                                        }),
+                                    )
+                                    .child(if self.playing { "⏸" } else { "▶" }),
+                            )
+                            .child(
+                                div()
+                                    .id("stop-button")
+                                    .px_4()
+                                    .py_2()
+                                    .bg(theme.element)
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .text_color(theme.text)
+                                    .hover(|s| s.bg(theme.element_hover))
+                                    .active(|s| s.bg(theme.element_active))
+                                    .on_mouse_down(
+                                        gpui::MouseButton::Left,
+                                        cx.listener(|_, _, _, cx| {
+                                            cx.emit(HeaderEvent::Stop);
+                                        }),
+                                    )
+                                    .child("⏹"),
+                            ),
+                    ),
             )
-            .child(div().ml_auto().child(format!("{} BPM", self.bpm)))
-            .child(div().ml_4().child(musical_time))
-            .child(div().ml_4().child(time_seconds))
+            .child(div().flex_1())
     }
 }

@@ -1,5 +1,6 @@
 mod header;
 mod playhead;
+pub mod primitives;
 mod ruler;
 mod sidebar;
 mod track;
