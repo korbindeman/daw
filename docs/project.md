@@ -18,6 +18,7 @@ Projects are stored as MessagePack-encoded binary files containing:
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | u64 | Unique track identifier |
+| `name` | String | Track name |
 | `clips` | Vec\<ClipData\> | List of clips on the track |
 
 ### ClipData
@@ -37,17 +38,59 @@ Audio paths can be either absolute or relative:
 
 For example, if your project is at `projects/my_song.dawproj` and references `../samples/kick.wav`, the audio file will be loaded from `samples/kick.wav`.
 
+## Project Metadata
+
+For performance reasons, you can load just the project metadata without decoding audio files using `load_project_metadata()`. This is useful for displaying project information in file browsers or project lists.
+
+### ProjectMetadata
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | String | Project name |
+| `tempo` | f64 | Tempo in BPM |
+| `time_signature` | (u32, u32) | Time signature |
+| `track_count` | usize | Number of tracks in the project |
+| `clip_count` | usize | Total number of clips across all tracks |
+
 ## Usage
 
 ### Saving a Project
 
 ```rust
 use daw_project::save_project;
-use daw_transport::{Track, TrackId, Clip, ClipId};
+use daw_transport::{Track, TrackId, Clip, ClipId, AudioBuffer, WaveformData};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-let tracks: Vec<Track> = /* your tracks */;
+// Create example tracks with clips
+let audio = Arc::new(AudioBuffer {
+    samples: vec![0.0; 44100],
+    sample_rate: 44100,
+    channels: 2,
+});
+let waveform = Arc::new(WaveformData::from_audio_buffer(&audio, 512));
+
+let tracks = vec![
+    Track {
+        id: TrackId(1),
+        name: "Drums".to_string(),
+        clips: vec![
+            Clip {
+                id: ClipId(0),
+                start: 0,
+                audio: audio.clone(),
+                waveform: waveform.clone(),
+            },
+            Clip {
+                id: ClipId(1),
+                start: 960,
+                audio: audio.clone(),
+                waveform: waveform.clone(),
+            },
+        ],
+    },
+];
 
 // Map clip IDs to their audio file paths
 let mut audio_paths = HashMap::new();
@@ -79,13 +122,30 @@ println!("Tracks: {}", project.tracks.len());
 
 // Access loaded tracks (with decoded audio buffers)
 for track in &project.tracks {
-    println!("Track {} has {} clips", track.id.0, track.clips.len());
+    println!("Track '{}' (ID: {}) has {} clips", track.name, track.id.0, track.clips.len());
 }
 
 // Access original audio paths (for re-saving)
 for (clip_id, path) in &project.audio_paths {
     println!("Clip {} -> {:?}", clip_id, path);
 }
+```
+
+### Loading Project Metadata Only
+
+For better performance when you only need project information without audio:
+
+```rust
+use daw_project::load_project_metadata;
+use std::path::Path;
+
+let metadata = load_project_metadata(Path::new("projects/my_song.dawproj"))?;
+
+println!("Project: {}", metadata.name);
+println!("Tempo: {} BPM", metadata.tempo);
+println!("Time Signature: {}/{}", metadata.time_signature.0, metadata.time_signature.1);
+println!("Tracks: {}", metadata.track_count);
+println!("Total Clips: {}", metadata.clip_count);
 ```
 
 ### LoadedProject

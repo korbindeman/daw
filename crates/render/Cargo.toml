@@ -1,0 +1,9 @@
+[package]
+name = "daw_render"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+daw_transport = { path = "../transport" }
+hound = "3.5"
+anyhow = "1"

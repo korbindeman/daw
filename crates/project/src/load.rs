@@ -15,12 +15,35 @@ pub struct LoadedProject {
     pub audio_paths: HashMap<u64, std::path::PathBuf>,
 }
 
-pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
+#[derive(Debug, Clone)]
+pub struct ProjectMetadata {
+    pub name: String,
+    pub tempo: f64,
+    pub time_signature: (u32, u32),
+    pub track_count: usize,
+    pub clip_count: usize,
+}
+
+pub fn load_project_metadata(path: &Path) -> Result<ProjectMetadata, ProjectError> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     let project: Project = rmp_serde::decode::from_read(reader)?;
 
-    let project_dir = path.parent().unwrap_or(Path::new("."));
+    let clip_count: usize = project.tracks.iter().map(|t| t.clips.len()).sum();
+
+    Ok(ProjectMetadata {
+        name: project.name,
+        tempo: project.tempo,
+        time_signature: project.time_signature,
+        track_count: project.tracks.len(),
+        clip_count,
+    })
+}
+
+pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+    let project: Project = rmp_serde::decode::from_read(reader)?;
 
     let mut tracks = Vec::new();
     let mut audio_paths = HashMap::new();
@@ -29,17 +52,12 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
         let mut clips = Vec::new();
 
         for clip_data in &track_data.clips {
-            let audio_path = if clip_data.audio_path.is_absolute() {
-                clip_data.audio_path.clone()
-            } else {
-                project_dir.join(&clip_data.audio_path)
-            };
-
-            let audio_buffer =
-                daw_decode::decode_file(&audio_path).map_err(|e| ProjectError::AudioDecode {
-                    path: audio_path.clone(),
+            let audio_buffer = daw_decode::decode_file(&clip_data.audio_path).map_err(|e| {
+                ProjectError::AudioDecode {
+                    path: clip_data.audio_path.clone(),
                     source: e,
-                })?;
+                }
+            })?;
 
             audio_paths.insert(clip_data.id, clip_data.audio_path.clone());
 
@@ -55,6 +73,7 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
 
         tracks.push(Track {
             id: TrackId(track_data.id),
+            name: track_data.name.clone(),
             clips,
         });
     }
@@ -71,7 +90,7 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{save_project, ClipData, Project, TrackData};
+    use crate::{ClipData, Project, TrackData, save_project};
     use daw_transport::{AudioBuffer, Clip, ClipId, Track, TrackId, WaveformData};
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -87,12 +106,12 @@ mod tests {
             0x57, 0x41, 0x56, 0x45, // "WAVE"
             0x66, 0x6d, 0x74, 0x20, // "fmt "
             0x10, 0x00, 0x00, 0x00, // format chunk size
-            0x01, 0x00,             // PCM format
-            0x01, 0x00,             // 1 channel
+            0x01, 0x00, // PCM format
+            0x01, 0x00, // 1 channel
             0x44, 0xac, 0x00, 0x00, // 44100 sample rate
             0x88, 0x58, 0x01, 0x00, // byte rate
-            0x02, 0x00,             // block align
-            0x10, 0x00,             // bits per sample
+            0x02, 0x00, // block align
+            0x10, 0x00, // bits per sample
             0x64, 0x61, 0x74, 0x61, // "data"
             0x00, 0x00, 0x00, 0x00, // data size (0 samples)
         ];
@@ -134,6 +153,7 @@ mod tests {
 
         let original_track = Track {
             id: TrackId(1),
+            name: "Roundtrip Track".to_string(),
             clips: vec![Clip {
                 id: ClipId(100),
                 start: 960,
@@ -183,6 +203,7 @@ mod tests {
             time_signature: (4, 4),
             tracks: vec![TrackData {
                 id: 1,
+                name: "Sample Track".to_string(),
                 clips: vec![ClipData {
                     id: 100,
                     start: 0,
@@ -215,6 +236,7 @@ mod tests {
             time_signature: (4, 4),
             tracks: vec![TrackData {
                 id: 1,
+                name: "Missing Track".to_string(),
                 clips: vec![ClipData {
                     id: 100,
                     start: 0,
@@ -229,7 +251,10 @@ mod tests {
 
         let result = load_project(&project_path);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ProjectError::AudioDecode { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            ProjectError::AudioDecode { .. }
+        ));
     }
 
     #[test]

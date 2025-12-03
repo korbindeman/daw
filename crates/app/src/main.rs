@@ -1,46 +1,40 @@
+mod app_menus;
 mod keybindings;
 mod theme;
 mod ui;
 
-use daw_engine as engine;
-use daw_project::load_project;
-use daw_transport::Command;
-use daw_transport::Status;
+use app_menus::{OpenProject, RenderProject, app_menus};
+use daw_core::Session;
 use gpui::{
     App, Application, Context, Entity, FocusHandle, Timer, Window, WindowOptions, actions, div,
     prelude::*, px,
 };
-use theme::{ActiveTheme, to_dark_variant};
 use keybindings::keybindings;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
+use theme::{ActiveTheme, to_dark_variant};
 use ui::{Header, HeaderEvent, Playhead, Sidebar, TimelineRuler, Track};
 
 struct Daw {
-    tracks: Vec<daw_transport::Track>,
-    engine_handle: engine::AudioEngineHandle,
-    current_tick: u64,
-    time_signature: (u32, u32), // (numerator, denominator) e.g., (4, 4)
-    tempo: f64,
-    pixels_per_beat: f64,
+    session: Session,
     header_handle: Entity<Header>,
     playhead_handle: Entity<Playhead>,
     focus_handle: FocusHandle,
+    project_path: PathBuf,
 }
 
 impl Daw {
     fn new(cx: &mut Context<Self>) -> Self {
-        let project = load_project(Path::new("projects/beat_1.dawproj"))
-            .expect("Failed to load default project");
+        Self::from_path(Path::new("projects/test.dawproj"), cx)
+    }
 
-        let time_signature = project.time_signature;
-        let tracks = project.tracks;
-        let bpm = project.tempo;
-        let pixels_per_beat = 100.0;
-        let engine_handle = engine::start(tracks.clone(), bpm).unwrap();
+    fn from_path(path: &Path, cx: &mut Context<Self>) -> Self {
+        let session = Session::from_project(path).expect("Failed to load project");
 
-        // Create header and subscribe to its events
-        let header = cx.new(|_| Header::new(0, time_signature, bpm));
+        let time_signature = session.time_signature();
+        let tempo = session.tempo();
+
+        let header = cx.new(|_| Header::new(0, time_signature.into(), tempo));
         cx.subscribe(
             &header,
             |this, header, event: &HeaderEvent, cx| match event {
@@ -51,11 +45,9 @@ impl Daw {
         )
         .detach();
 
-        // Create playhead
+        let pixels_per_beat = session.time_context().pixels_per_beat;
         let playhead = cx.new(|_| Playhead::new(0, pixels_per_beat));
 
-        // Start a timer to poll playback position and update the header
-        // TODO: I don't really know how this works
         cx.spawn(
             async |this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
                 loop {
@@ -76,48 +68,71 @@ impl Daw {
         let focus_handle = cx.focus_handle();
 
         Self {
-            tracks,
-            engine_handle,
-            current_tick: 0,
-            time_signature,
-            tempo: bpm,
-            pixels_per_beat,
+            session,
             header_handle: header,
             playhead_handle: playhead,
             focus_handle,
+            project_path: path.to_path_buf(),
         }
     }
 
-    fn poll_status(&mut self, cx: &mut Context<Self>) {
-        while let Ok(status) = self.engine_handle.status.pop() {
-            match status {
-                Status::Position(tick) => {
-                    self.current_tick = tick;
-                    self.header_handle.update(cx, |header, cx| {
-                        header.set_tick(tick, cx);
-                    });
-                    self.playhead_handle.update(cx, |playhead, cx| {
-                        playhead.set_tick(tick);
-                        cx.notify();
-                    });
-                }
+    fn load_project(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        // If same project, do nothing
+        if path == self.project_path {
+            return;
+        }
+
+        // Load new session
+        match Session::from_project(&path) {
+            Ok(session) => {
+                // Update session
+                self.session = session;
+                self.project_path = path;
+
+                // Update header
+                self.header_handle.update(cx, |header, cx| {
+                    header.set_tick(0, cx);
+                    header.set_playing(false, cx);
+                });
+
+                // Update playhead
+                self.playhead_handle.update(cx, |playhead, cx| {
+                    playhead.set_tick(0);
+                    cx.notify();
+                });
+
+                cx.notify();
+            }
+            Err(e) => {
+                eprintln!("Failed to load project: {}", e);
             }
         }
     }
 
+    fn poll_status(&mut self, cx: &mut Context<Self>) {
+        if let Some(tick) = self.session.poll() {
+            self.header_handle.update(cx, |header, cx| {
+                header.set_tick(tick, cx);
+            });
+            self.playhead_handle.update(cx, |playhead, cx| {
+                playhead.set_tick(tick);
+                cx.notify();
+            });
+        }
+    }
+
     fn play(&mut self, header: &Entity<Header>, cx: &mut Context<Self>) {
-        let _ = self.engine_handle.commands.push(Command::Play);
+        self.session.play();
         header.update(cx, |header, cx| header.set_playing(true, cx));
     }
 
     fn pause(&mut self, header: &Entity<Header>, cx: &mut Context<Self>) {
-        let _ = self.engine_handle.commands.push(Command::Pause);
+        self.session.pause();
         header.update(cx, |header, cx| header.set_playing(false, cx));
     }
 
     fn stop(&mut self, header: &Entity<Header>, cx: &mut Context<Self>) {
-        let _ = self.engine_handle.commands.push(Command::Pause);
-        let _ = self.engine_handle.commands.push(Command::Seek { tick: 0 });
+        self.session.stop();
         header.update(cx, |header, cx| header.set_playing(false, cx));
     }
 }
@@ -126,8 +141,11 @@ impl Render for Daw {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
 
-        // Calculate timeline width based on furthest clip end
-        let timeline_width = self.calculate_timeline_width();
+        let timeline_width = self.session.calculate_timeline_width();
+        let time_ctx = self.session.time_context();
+        let pixels_per_beat = time_ctx.pixels_per_beat;
+        let time_signature = time_ctx.time_signature;
+        let tracks = self.session.tracks();
 
         let header_handle = self.header_handle.clone();
 
@@ -139,7 +157,7 @@ impl Render for Daw {
             .flex_col()
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(move |this, _: &PlayPause, _, cx| {
-                let is_playing = this.header_handle.read(cx).playing;
+                let is_playing = this.session.is_playing();
                 header_handle.update(cx, |_, cx| {
                     if is_playing {
                         cx.emit(HeaderEvent::Stop);
@@ -147,6 +165,52 @@ impl Render for Daw {
                         cx.emit(HeaderEvent::Play);
                     }
                 });
+            }))
+            .on_action(cx.listener(|_this, _: &OpenProject, _, cx| {
+                cx.spawn(
+                    async |this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
+                        let file = rfd::AsyncFileDialog::new()
+                            .add_filter("DAW Project", &["dawproj"])
+                            .set_title("Open Project")
+                            .pick_file()
+                            .await;
+
+                        if let Some(file) = file {
+                            let path = file.path().to_path_buf();
+                            let _ = cx.update(|cx| {
+                                this.update(cx, |daw, cx| {
+                                    daw.load_project(path, cx);
+                                })
+                            });
+                        }
+                    },
+                )
+                .detach();
+            }))
+            .on_action(cx.listener(|this, _: &RenderProject, _, cx| {
+                let session = &this.session;
+                let tempo = session.tempo();
+                let tracks = session.tracks().to_vec();
+
+                cx.spawn(
+                    async move |_this: gpui::WeakEntity<Self>, _cx: &mut gpui::AsyncApp| {
+                        let file = rfd::AsyncFileDialog::new()
+                            .add_filter("WAV Audio", &["wav"])
+                            .set_title("Render to WAV")
+                            .set_file_name("render.wav")
+                            .save_file()
+                            .await;
+
+                        if let Some(file) = file {
+                            let path = file.path().to_path_buf();
+                            let buffer = daw_render::render_timeline(&tracks, tempo, 44100, 2);
+                            if let Err(e) = daw_render::write_wav(&buffer, &path) {
+                                eprintln!("Failed to render: {}", e);
+                            }
+                        }
+                    },
+                )
+                .detach();
             }))
             .child(self.header_handle.clone())
             .child(
@@ -166,8 +230,8 @@ impl Render for Daw {
                                     .pr(px(150.))
                                     .child(cx.new(|_| {
                                         TimelineRuler::new(
-                                            self.pixels_per_beat,
-                                            self.time_signature,
+                                            pixels_per_beat,
+                                            time_signature.into(),
                                             timeline_width,
                                         )
                                     }))
@@ -176,12 +240,12 @@ impl Render for Daw {
                                             .flex_1()
                                             .relative()
                                             .child(self.playhead_handle.clone())
-                                            .children(self.tracks.iter().map(|track| {
+                                            .children(tracks.iter().map(|track| {
                                                 cx.new(|_| {
                                                     Track::new(
                                                         track.clone(),
-                                                        self.pixels_per_beat,
-                                                        self.tempo,
+                                                        pixels_per_beat,
+                                                        self.session.tempo(),
                                                         timeline_width,
                                                     )
                                                 })
@@ -204,8 +268,9 @@ impl Render for Daw {
                                             .border_l_1()
                                             .border_color(theme.border),
                                     )
-                                    .children(self.tracks.iter().enumerate().map(|(i, track)| {
-                                        let track_color = theme.track_colors[i % theme.track_colors.len()];
+                                    .children(tracks.iter().enumerate().map(|(i, track)| {
+                                        let track_color =
+                                            theme.track_colors[i % theme.track_colors.len()];
                                         let text_color = to_dark_variant(track_color);
                                         div()
                                             .h(px(80.))
@@ -213,42 +278,39 @@ impl Render for Daw {
                                             .border_b_1()
                                             .border_color(theme.border)
                                             .border_l_1()
-                                            .p_2()
+                                            .px_1()
                                             .flex()
-                                            .items_center()
+                                            .flex_col()
                                             .child(
                                                 div()
                                                     .text_sm()
+                                                    .font_weight(gpui::FontWeight::BOLD)
                                                     .text_color(text_color)
-                                                    .child(format!("Track {}", track.id.0)),
+                                                    .child(track.name.clone()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(text_color.opacity(0.7))
+                                                    .child(
+                                                        track
+                                                            .clips
+                                                            .first()
+                                                            .map(|_| {
+                                                                format!(
+                                                                    "{} clip(s)",
+                                                                    track.clips.len()
+                                                                )
+                                                            })
+                                                            .unwrap_or_else(|| {
+                                                                "No clips".to_string()
+                                                            }),
+                                                    ),
                                             )
                                     })),
                             ),
                     ),
             )
-    }
-}
-
-impl Daw {
-    fn calculate_timeline_width(&self) -> f64 {
-        use daw_transport::PPQN;
-
-        let mut max_end_tick = 0u64;
-        for track in &self.tracks {
-            for clip in &track.clips {
-                let duration_ticks = clip.duration_ticks(self.tempo);
-                let end_tick = clip.start + duration_ticks;
-                max_end_tick = max_end_tick.max(end_tick);
-            }
-        }
-
-        // Add some padding at the end
-        let end_with_padding = max_end_tick + (PPQN * 4); // 4 beats padding
-        let content_width = (end_with_padding as f64 / PPQN as f64) * self.pixels_per_beat;
-
-        // Ensure minimum width to fill the container
-        let min_width = 1200.0; // Minimum timeline width
-        content_width.max(min_width)
     }
 }
 
@@ -258,12 +320,18 @@ fn main() {
     Application::new().run(|cx: &mut App| {
         theme::init(cx);
 
+        // Set up menus
+        cx.set_menus(app_menus());
+
+        // Set up actions
         cx.on_action(|_: &Quit, cx: &mut App| {
             cx.quit();
         });
 
+        // Bind keys
         cx.bind_keys(keybindings());
 
+        // Open window
         cx.open_window(WindowOptions::default(), |_, cx| cx.new(|cx| Daw::new(cx)))
             .unwrap();
     });

@@ -20,16 +20,14 @@ pub fn save_project(
             .iter()
             .map(|track| TrackData {
                 id: track.id.0,
+                name: track.name.clone(),
                 clips: track
                     .clips
                     .iter()
                     .map(|clip| ClipData {
                         id: clip.id.0,
                         start: clip.start,
-                        audio_path: audio_paths
-                            .get(&clip.id.0)
-                            .cloned()
-                            .unwrap_or_default(),
+                        audio_path: audio_paths.get(&clip.id.0).cloned().unwrap_or_default(),
                     })
                     .collect(),
             })
@@ -62,6 +60,7 @@ mod tests {
 
         let track = Track {
             id: TrackId(1),
+            name: "Test Track".to_string(),
             clips: vec![
                 Clip {
                     id: ClipId(100),
@@ -169,6 +168,7 @@ mod tests {
 
         let track = Track {
             id: TrackId(1),
+            name: "Missing Path Track".to_string(),
             clips: vec![Clip {
                 id: ClipId(999),
                 start: 0,

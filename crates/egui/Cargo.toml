@@ -1,12 +1,14 @@
 [package]
-name = "daw_app"
+name = "daw_egui"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
 daw_core = { path = "../core" }
-daw_render = { path = "../render" }
+daw_decode = { path = "../decode" }
+daw_engine = { path = "../engine" }
+daw_project = { path = "../project" }
 daw_transport = { path = "../transport" }
-gpui = "*"
-anyhow = "1.0"
+eframe = "0.31"
 rfd = "0.15"
+rmp-serde = "1.3"

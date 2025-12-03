@@ -86,6 +86,7 @@ pub struct ClipId(pub u64);
 #[derive(Debug, Clone)]
 pub struct Track {
     pub id: TrackId,
+    pub name: String,
     pub clips: Vec<Clip>,
 }
 

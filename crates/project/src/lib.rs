@@ -4,7 +4,7 @@ mod save;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub use load::load_project;
+pub use load::{ProjectMetadata, load_project, load_project_metadata};
 pub use save::save_project;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,6 +18,7 @@ pub struct Project {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackData {
     pub id: u64,
+    pub name: String,
     pub clips: Vec<ClipData>,
 }
 
@@ -59,6 +60,7 @@ mod tests {
             tracks: vec![
                 TrackData {
                     id: 1,
+                    name: "Drums".to_string(),
                     clips: vec![
                         ClipData {
                             id: 100,
@@ -74,6 +76,7 @@ mod tests {
                 },
                 TrackData {
                     id: 2,
+                    name: "Hi-Hats".to_string(),
                     clips: vec![ClipData {
                         id: 200,
                         start: 480,
@@ -101,6 +104,7 @@ mod tests {
     fn test_track_data_serialization() {
         let track = TrackData {
             id: 42,
+            name: "Test Track".to_string(),
             clips: vec![ClipData {
                 id: 1,
                 start: 1920,
@@ -115,7 +119,10 @@ mod tests {
         assert_eq!(decoded.clips.len(), 1);
         assert_eq!(decoded.clips[0].id, 1);
         assert_eq!(decoded.clips[0].start, 1920);
-        assert_eq!(decoded.clips[0].audio_path, PathBuf::from("samples/test.wav"));
+        assert_eq!(
+            decoded.clips[0].audio_path,
+            PathBuf::from("samples/test.wav")
+        );
     }
 
     #[test]
@@ -156,6 +163,7 @@ mod tests {
     fn test_track_with_no_clips() {
         let track = TrackData {
             id: 5,
+            name: "Empty Track".to_string(),
             clips: vec![],
         };
 

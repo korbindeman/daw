@@ -1,12 +1,11 @@
 [package]
-name = "daw_app"
+name = "daw_core"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-daw_core = { path = "../core" }
+daw_engine = { path = "../engine" }
+daw_project = { path = "../project" }
 daw_render = { path = "../render" }
 daw_transport = { path = "../transport" }
-gpui = "*"
 anyhow = "1.0"
-rfd = "0.15"

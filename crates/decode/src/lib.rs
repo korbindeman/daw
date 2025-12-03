@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use daw_transport::AudioBuffer;
 use symphonia::core::audio::SampleBuffer;
@@ -9,7 +9,39 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
+const SAMPLES_ROOT: &str = "samples";
+
+pub fn resolve_sample_path(path: &Path) -> Option<PathBuf> {
+    if path.exists() {
+        return Some(path.to_path_buf());
+    }
+
+    let file_name = path.file_name()?;
+    let root = Path::new(SAMPLES_ROOT);
+
+    if root.join(path).exists() {
+        return Some(root.join(path));
+    }
+
+    for entry in root.read_dir().ok()?.flatten() {
+        if entry.path().is_dir() {
+            let candidate = entry.path().join(file_name);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
 pub fn decode_file(path: &Path) -> anyhow::Result<AudioBuffer> {
+    let resolved = resolve_sample_path(path)
+        .ok_or_else(|| anyhow::anyhow!("sample not found: {}", path.display()))?;
+    decode_file_direct(&resolved)
+}
+
+pub fn decode_file_direct(path: &Path) -> anyhow::Result<AudioBuffer> {
     let file = File::open(path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
 

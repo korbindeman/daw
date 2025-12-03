@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/app",
-    "crates/decode",
-    "crates/engine", "crates/project",
+    "crates/app", "crates/core",
+    "crates/decode", "crates/egui",
+    "crates/engine", "crates/project", "crates/render",
     "crates/transport"
 ]
 
