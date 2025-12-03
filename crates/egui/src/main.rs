@@ -1,8 +1,7 @@
-use daw_core::PPQN;
-use daw_decode::decode_file;
-use daw_engine::AudioEngineHandle;
-use daw_project::{Project, ProjectError, save_project};
-use daw_transport::{AudioBuffer, Clip, ClipId, Command, Track, TrackId, WaveformData};
+use daw_core::{
+    AudioBuffer, Clip, ClipId, PPQN, Project, ProjectError, Session, TimeSignature, Track, TrackId,
+    WaveformData, decode_file, save_project,
+};
 use eframe::egui;
 use std::collections::HashMap;
 use std::fs::File;
@@ -10,7 +9,7 @@ use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-const SAMPLES_DIR: &str = "samples/cr78";
+const SAMPLES_DIR: &str = "samples";
 const NUM_STEPS: usize = 16;
 const DEFAULT_TRACKS: usize = 4;
 
@@ -21,7 +20,7 @@ fn main() -> eframe::Result<()> {
     };
 
     eframe::run_native(
-        "DAW Step Sequencer",
+        "Step Sequencer",
         options,
         Box::new(|_cc| Ok(Box::new(SequencerApp::new()))),
     )
@@ -49,12 +48,16 @@ struct SequencerApp {
     tracks: Vec<SequencerTrackState>,
     available_samples: Vec<PathBuf>,
     tempo: f64,
-    playing: bool,
+    tempo_input: String,
+    time_signature: TimeSignature,
+    time_sig_numerator_input: String,
+    time_sig_denominator_input: String,
     current_step: usize,
-    engine: Option<AudioEngineHandle>,
+    session: Option<Session>,
     project_name: String,
     error_message: Option<String>,
     loop_count: usize,
+    loop_count_input: String,
 }
 
 impl SequencerApp {
@@ -70,25 +73,37 @@ impl SequencerApp {
             tracks,
             available_samples,
             tempo: 120.0,
-            playing: false,
+            tempo_input: "120".to_string(),
+            time_signature: TimeSignature::new(4, 4),
+            time_sig_numerator_input: "4".to_string(),
+            time_sig_denominator_input: "4".to_string(),
             current_step: 0,
-            engine: None,
+            session: None,
             project_name: "Untitled".to_string(),
             error_message: None,
-            loop_count: 1,
+            loop_count: 8,
+            loop_count_input: "8".to_string(),
         }
     }
 
     fn scan_samples() -> Vec<PathBuf> {
-        let mut samples = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(SAMPLES_DIR) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().is_some_and(|e| e == "wav") {
-                    samples.push(path);
+        fn scan_dir(dir: &str, samples: &mut Vec<PathBuf>) {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        if let Some(path_str) = path.to_str() {
+                            scan_dir(path_str, samples);
+                        }
+                    } else if path.extension().is_some_and(|e| e == "wav") {
+                        samples.push(path);
+                    }
                 }
             }
         }
+
+        let mut samples = Vec::new();
+        scan_dir(SAMPLES_DIR, &mut samples);
         samples.sort();
         samples
     }
@@ -160,16 +175,15 @@ impl SequencerApp {
     }
 
     fn start_playback(&mut self) {
-        if self.engine.is_some() {
+        if self.session.is_some() {
             return;
         }
 
         let tracks = self.build_transport_tracks();
-        match daw_engine::start(tracks, self.tempo) {
-            Ok(mut handle) => {
-                let _ = handle.commands.push(Command::Play);
-                self.engine = Some(handle);
-                self.playing = true;
+        match Session::new(tracks, self.tempo, self.time_signature) {
+            Ok(mut session) => {
+                session.play();
+                self.session = Some(session);
                 self.error_message = None;
             }
             Err(e) => {
@@ -179,26 +193,21 @@ impl SequencerApp {
     }
 
     fn stop_playback(&mut self) {
-        if let Some(mut handle) = self.engine.take() {
-            let _ = handle.commands.push(Command::Pause);
+        if let Some(ref mut session) = self.session {
+            session.stop();
         }
-        self.playing = false;
+        self.session = None;
         self.current_step = 0;
     }
 
     fn update_playback_position(&mut self) {
-        if let Some(ref mut handle) = self.engine {
-            while let Ok(status) = handle.status.pop() {
-                match status {
-                    daw_transport::Status::Position(ticks) => {
-                        let ticks_per_step = Self::ticks_per_step();
-                        let ticks_per_bar = NUM_STEPS as u64 * ticks_per_step;
-                        let total_ticks = ticks_per_bar * self.loop_count as u64;
-                        let wrapped_ticks = ticks % total_ticks;
-                        self.current_step =
-                            ((wrapped_ticks % ticks_per_bar) / ticks_per_step) as usize;
-                    }
-                }
+        if let Some(ref mut session) = self.session {
+            if let Some(ticks) = session.poll() {
+                let ticks_per_step = Self::ticks_per_step();
+                let ticks_per_bar = NUM_STEPS as u64 * ticks_per_step;
+                let total_ticks = ticks_per_bar * self.loop_count as u64;
+                let wrapped_ticks = ticks % total_ticks;
+                self.current_step = ((wrapped_ticks % ticks_per_bar) / ticks_per_step) as usize;
             }
         }
     }
@@ -337,7 +346,8 @@ impl eframe::App for SequencerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.update_playback_position();
 
-        if self.playing {
+        let is_playing = self.session.as_ref().map_or(false, |s| s.is_playing());
+        if is_playing {
             ctx.request_repaint();
         }
 
@@ -364,30 +374,49 @@ impl eframe::App for SequencerApp {
 
             ui.horizontal(|ui| {
                 ui.label("BPM:");
-                let mut tempo_str = format!("{:.0}", self.tempo);
-                if ui.text_edit_singleline(&mut tempo_str).changed() {
-                    if let Ok(t) = tempo_str.parse::<f64>() {
+                let response = ui.text_edit_singleline(&mut self.tempo_input);
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    if let Ok(t) = self.tempo_input.parse::<f64>() {
                         if (30.0..=300.0).contains(&t) {
                             self.tempo = t;
+                            if let Some(ref mut session) = self.session {
+                                session.time_context_mut().tempo = t;
+                                session.update_tempo();
+                            }
+                        } else {
+                            self.tempo_input = format!("{:.0}", self.tempo);
                         }
+                    } else {
+                        self.tempo_input = format!("{:.0}", self.tempo);
                     }
                 }
 
                 ui.add_space(20.0);
 
                 ui.label("Loops:");
-                let mut loop_str = format!("{}", self.loop_count);
-                if ui.text_edit_singleline(&mut loop_str).changed() {
-                    if let Ok(l) = loop_str.parse::<usize>() {
+                let response = ui.text_edit_singleline(&mut self.loop_count_input);
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    if let Ok(l) = self.loop_count_input.parse::<usize>() {
                         if (1..=16).contains(&l) {
                             self.loop_count = l;
+                        } else {
+                            self.loop_count_input = format!("{}", self.loop_count);
                         }
+                    } else {
+                        self.loop_count_input = format!("{}", self.loop_count);
                     }
                 }
 
                 ui.add_space(20.0);
 
-                if self.playing {
+                ui.label("Time Sig:");
+                ui.label(&self.time_sig_numerator_input);
+                ui.label("/");
+                ui.label(&self.time_sig_denominator_input);
+
+                ui.add_space(20.0);
+
+                if is_playing {
                     if ui.button("⏹ Stop").clicked() {
                         self.stop_playback();
                     }
@@ -406,14 +435,29 @@ impl eframe::App for SequencerApp {
                 ui.add_space(150.0);
                 for i in 0..NUM_STEPS {
                     let label = format!("{}", i + 1);
-                    let text = if self.playing && i == self.current_step {
-                        egui::RichText::new(label)
-                            .strong()
-                            .color(egui::Color32::YELLOW)
+                    let is_beat = i % self.time_signature.denominator as usize == 0;
+
+                    let (text_color, bg_color) = if is_playing && i == self.current_step {
+                        (egui::Color32::BLACK, egui::Color32::YELLOW)
+                    } else if is_beat {
+                        (egui::Color32::WHITE, egui::Color32::from_rgb(70, 130, 180))
                     } else {
-                        egui::RichText::new(label)
+                        (
+                            egui::Color32::LIGHT_GRAY,
+                            egui::Color32::from_rgb(40, 40, 40),
+                        )
                     };
-                    ui.add_sized([30.0, 20.0], egui::Label::new(text));
+
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(30.0, 20.0), egui::Sense::hover());
+                    ui.painter().rect_filled(rect, 2.0, bg_color);
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        label,
+                        egui::FontId::default(),
+                        text_color,
+                    );
                 }
             });
 
@@ -422,6 +466,7 @@ impl eframe::App for SequencerApp {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let samples = self.available_samples.clone();
                 let mut load_requests: Vec<(usize, PathBuf)> = Vec::new();
+                let mut tracks_modified = false;
 
                 for (track_idx, track) in self.tracks.iter_mut().enumerate() {
                     ui.horizontal(|ui| {
@@ -442,7 +487,7 @@ impl eframe::App for SequencerApp {
                             });
 
                         for (step_idx, step) in track.steps.iter_mut().enumerate() {
-                            let is_current = self.playing && step_idx == self.current_step;
+                            let is_current = is_playing && step_idx == self.current_step;
                             let color = if *step {
                                 if is_current {
                                     egui::Color32::YELLOW
@@ -459,6 +504,7 @@ impl eframe::App for SequencerApp {
                                 ui.add_sized([30.0, 30.0], egui::Button::new("").fill(color));
                             if response.clicked() {
                                 *step = !*step;
+                                tracks_modified = true;
                             }
                         }
                     });
@@ -466,6 +512,16 @@ impl eframe::App for SequencerApp {
 
                 for (track_idx, path) in load_requests {
                     self.load_sample(track_idx, &path);
+                }
+
+                if tracks_modified {
+                    if self.session.is_some() {
+                        let tracks = self.build_transport_tracks();
+                        if let Some(ref mut session) = self.session {
+                            *session.tracks_mut() = tracks;
+                            session.update_tracks();
+                        }
+                    }
                 }
             });
         });
