@@ -1,12 +1,15 @@
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
 use basedrop::Shared;
+use rayon::prelude::*;
 
 use crate::time::{TimeContext, TimeSignature};
 use daw_engine::{AudioEngineHandle, EngineClip, EngineCommand, EngineStatus, EngineTrack};
 use daw_project::load_project;
 use daw_render::{render_timeline, write_wav};
-use daw_transport::{Track, PPQN};
+use daw_transport::{resample_audio, AudioBuffer, PPQN, Track};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaybackState {
@@ -21,12 +24,17 @@ impl PlaybackState {
     }
 }
 
+/// Cache key for resampled audio: (pointer to original audio, target sample rate)
+type ResampleCacheKey = (usize, u32);
+
 pub struct Session {
     engine: AudioEngineHandle,
     tracks: Vec<Track>,
     time_context: TimeContext,
     current_tick: u64,
     playback_state: PlaybackState,
+    /// Cache of resampled audio buffers, keyed by (original audio pointer, target sample rate)
+    resample_cache: HashMap<ResampleCacheKey, Arc<AudioBuffer>>,
 }
 
 impl Session {
@@ -48,6 +56,7 @@ impl Session {
             time_context,
             current_tick: 0,
             playback_state: PlaybackState::Stopped,
+            resample_cache: HashMap::new(),
         };
 
         // Now send the real tracks with correct sample rate conversion
@@ -118,16 +127,62 @@ impl Session {
         let _ = self.engine.tracks.push(shared_tracks);
     }
 
-    fn convert_tracks_for_engine(&self, sample_rate: u32) -> Vec<EngineTrack> {
+    fn convert_tracks_for_engine(&mut self, sample_rate: u32) -> Vec<EngineTrack> {
+        // Collect unique audio buffers by pointer address (avoids needing Hash on AudioBuffer)
+        let mut unique_audios: HashMap<usize, Arc<AudioBuffer>> = HashMap::new();
+        for track in &self.tracks {
+            for clip in &track.clips {
+                let ptr = Arc::as_ptr(&clip.audio) as usize;
+                unique_audios
+                    .entry(ptr)
+                    .or_insert_with(|| clip.audio.clone());
+            }
+        }
+
+        // Filter to only those not already in cache
+        let to_resample: Vec<Arc<AudioBuffer>> = unique_audios
+            .into_values()
+            .filter(|audio| {
+                let key = (Arc::as_ptr(audio) as usize, sample_rate);
+                !self.resample_cache.contains_key(&key)
+            })
+            .collect();
+
+        // Resample in parallel
+        let resampled: Vec<(ResampleCacheKey, Arc<AudioBuffer>)> = to_resample
+            .par_iter()
+            .filter_map(|audio| {
+                let key = (Arc::as_ptr(audio) as usize, sample_rate);
+                if audio.sample_rate == sample_rate {
+                    // No resampling needed, use original
+                    Some((key, audio.clone()))
+                } else {
+                    resample_audio(audio, sample_rate)
+                        .ok()
+                        .map(|resampled| (key, Arc::new(resampled)))
+                }
+            })
+            .collect();
+
+        // Insert into cache
+        for (key, audio) in resampled {
+            self.resample_cache.insert(key, audio);
+        }
+
+        // Build engine tracks using cached resampled audio
         self.tracks
             .iter()
             .map(|track| EngineTrack {
                 clips: track
                     .clips
                     .iter()
-                    .map(|clip| EngineClip {
-                        start: self.ticks_to_samples_with_rate(clip.start, sample_rate),
-                        audio: clip.audio.clone(),
+                    .filter_map(|clip| {
+                        let key = (Arc::as_ptr(&clip.audio) as usize, sample_rate);
+                        let resampled_audio = self.resample_cache.get(&key)?;
+                        Some(EngineClip {
+                            start: self.ticks_to_samples_with_rate(clip.start, sample_rate),
+                            audio: resampled_audio.clone(),
+                        })
                     })
                     .collect(),
             })
@@ -135,7 +190,8 @@ impl Session {
     }
 
     fn ticks_to_samples(&self, ticks: u64) -> u64 {
-        self.time_context.ticks_to_samples(ticks, self.engine.sample_rate)
+        self.time_context
+            .ticks_to_samples(ticks, self.engine.sample_rate)
     }
 
     fn ticks_to_samples_with_rate(&self, ticks: u64, sample_rate: u32) -> u64 {
@@ -143,7 +199,8 @@ impl Session {
     }
 
     fn samples_to_ticks(&self, samples: u64) -> u64 {
-        self.time_context.samples_to_ticks(samples, self.engine.sample_rate)
+        self.time_context
+            .samples_to_ticks(samples, self.engine.sample_rate)
     }
 
     pub fn current_tick(&self) -> u64 {

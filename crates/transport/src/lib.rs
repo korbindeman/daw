@@ -1,5 +1,9 @@
 use std::sync::Arc;
 
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
+
 /// Pulses Per Quarter Note - defines timing resolution
 pub const PPQN: u64 = 960;
 
@@ -88,4 +92,59 @@ pub fn samples_to_ticks(samples: f64, tempo: f64, sample_rate: u32) -> u64 {
     let seconds_per_tick = seconds_per_beat / PPQN as f64;
     let seconds = samples / sample_rate as f64;
     (seconds / seconds_per_tick) as u64
+}
+
+/// Resample an audio buffer to a target sample rate
+pub fn resample_audio(
+    buffer: &AudioBuffer,
+    target_sample_rate: u32,
+) -> anyhow::Result<AudioBuffer> {
+    // If already at target rate, return a clone
+    if buffer.sample_rate == target_sample_rate {
+        return Ok(buffer.clone());
+    }
+
+    let channels = buffer.channels as usize;
+    let input_frames = buffer.samples.len() / channels;
+
+    // Calculate output length
+    let resample_ratio = target_sample_rate as f64 / buffer.sample_rate as f64;
+    let output_frames = (input_frames as f64 * resample_ratio).ceil() as usize;
+
+    // Convert interleaved samples to per-channel format for rubato
+    let mut input_channels = vec![Vec::with_capacity(input_frames); channels];
+    for frame_idx in 0..input_frames {
+        for ch in 0..channels {
+            input_channels[ch].push(buffer.samples[frame_idx * channels + ch]);
+        }
+    }
+
+    // Create resampler with high quality settings
+    let params = SincInterpolationParameters {
+        sinc_len: 256,
+        f_cutoff: 0.95,
+        interpolation: SincInterpolationType::Linear,
+        oversampling_factor: 256,
+        window: WindowFunction::BlackmanHarris2,
+    };
+
+    let mut resampler =
+        SincFixedIn::<f32>::new(resample_ratio, 2.0, params, input_frames, channels)?;
+
+    // Process resampling
+    let output_channels = resampler.process(&input_channels, None)?;
+
+    // Convert back to interleaved format
+    let mut output_samples = Vec::with_capacity(output_frames * channels);
+    for frame_idx in 0..output_channels[0].len() {
+        for ch in 0..channels {
+            output_samples.push(output_channels[ch][frame_idx]);
+        }
+    }
+
+    Ok(AudioBuffer {
+        samples: output_samples,
+        sample_rate: target_sample_rate,
+        channels: buffer.channels,
+    })
 }

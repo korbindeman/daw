@@ -201,12 +201,18 @@ mod tests {
         // At 60 BPM: 1 beat = 1 second = 44100 samples
         let ctx_60 = TimeContext::new(60.0, (4, 4), 100.0);
         let samples_60 = ctx_60.ticks_to_samples(PPQN, sample_rate);
-        assert_eq!(samples_60, 44100, "1 beat at 60 BPM should be 44100 samples");
+        assert_eq!(
+            samples_60, 44100,
+            "1 beat at 60 BPM should be 44100 samples"
+        );
 
         // At 120 BPM: 1 beat = 0.5 seconds = 22050 samples
         let ctx_120 = TimeContext::new(120.0, (4, 4), 100.0);
         let samples_120 = ctx_120.ticks_to_samples(PPQN, sample_rate);
-        assert_eq!(samples_120, 22050, "1 beat at 120 BPM should be 22050 samples");
+        assert_eq!(
+            samples_120, 22050,
+            "1 beat at 120 BPM should be 22050 samples"
+        );
 
         // Doubling tempo should halve the sample count
         assert_eq!(samples_60, samples_120 * 2);
