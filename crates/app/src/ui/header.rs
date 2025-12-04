@@ -5,9 +5,10 @@ use gpui::{Context, Entity, EventEmitter, FocusHandle, Focusable, Window, div, p
 
 pub struct Header {
     current_tick: u64,
-    time_signature: (u32, u32),
-    bpm: f64,
     pub playing: bool,
+    bpm: f64,
+    time_sig_numerator: u32,
+    time_sig_denominator: u32,
     bpm_input: Entity<Input>,
     time_sig_numerator_input: Entity<Input>,
     time_sig_denominator_input: Entity<Input>,
@@ -24,65 +25,44 @@ impl EventEmitter<HeaderEvent> for Header {}
 
 impl Header {
     pub fn new(
-        current_tick: u64,
-        time_signature: (u32, u32),
         bpm: f64,
+        time_sig_numerator: u32,
+        time_sig_denominator: u32,
         cx: &mut Context<Self>,
     ) -> Self {
-        let header_entity = cx.entity();
-
         let bpm_input = cx.new(|cx| {
             Input::new(cx.focus_handle())
                 .content(format!("{}", bpm))
-                .on_change(move |text, _window, cx| {
-                    if let Ok(new_bpm) = text.parse::<f64>() {
-                        if new_bpm > 0.0 && new_bpm <= 999.0 {
-                            let _ = header_entity.update(cx, |header, cx| {
-                                header.bpm = new_bpm;
-                                cx.notify();
-                            });
-                        }
-                    }
+                .numeric_only(true)
+                .on_change(move |_text, _window, _cx| {
+                    // BPM changes will be handled externally
                 })
         });
 
-        let header_entity_2 = cx.entity();
         let time_sig_numerator_input = cx.new(|cx| {
             Input::new(cx.focus_handle())
-                .content(format!("{}", time_signature.0))
-                .on_change(move |text, _window, cx| {
-                    if let Ok(new_num) = text.parse::<u32>() {
-                        if new_num > 0 && new_num <= 32 {
-                            let _ = header_entity_2.update(cx, |header, cx| {
-                                header.time_signature.0 = new_num;
-                                cx.notify();
-                            });
-                        }
-                    }
+                .content(format!("{}", time_sig_numerator))
+                .numeric_only(true)
+                .on_change(move |_text, _window, _cx| {
+                    // Time signature changes will be handled externally
                 })
         });
 
-        let header_entity_3 = cx.entity();
         let time_sig_denominator_input = cx.new(|cx| {
             Input::new(cx.focus_handle())
-                .content(format!("{}", time_signature.1))
-                .on_change(move |text, _window, cx| {
-                    if let Ok(new_denom) = text.parse::<u32>() {
-                        if new_denom > 0 && new_denom <= 32 {
-                            let _ = header_entity_3.update(cx, |header, cx| {
-                                header.time_signature.1 = new_denom;
-                                cx.notify();
-                            });
-                        }
-                    }
+                .content(format!("{}", time_sig_denominator))
+                .numeric_only(true)
+                .on_change(move |_text, _window, _cx| {
+                    // Time signature changes will be handled externally
                 })
         });
 
         Self {
-            current_tick,
-            time_signature,
-            bpm,
+            current_tick: 0,
             playing: false,
+            bpm,
+            time_sig_numerator,
+            time_sig_denominator,
             bpm_input,
             time_sig_numerator_input,
             time_sig_denominator_input,
@@ -90,12 +70,32 @@ impl Header {
         }
     }
 
-    fn ticks_to_musical_time(&self, ticks: u64) -> (u32, u32, u32) {
-        let (numerator, _denominator) = self.time_signature;
+    pub fn update_values(
+        &mut self,
+        bpm: f64,
+        time_sig_numerator: u32,
+        time_sig_denominator: u32,
+        cx: &mut Context<Self>,
+    ) {
+        self.bpm = bpm;
+        self.time_sig_numerator = time_sig_numerator;
+        self.time_sig_denominator = time_sig_denominator;
 
+        self.bpm_input.update(cx, |input, cx| {
+            input.set_content(format!("{}", bpm), cx);
+        });
+        self.time_sig_numerator_input.update(cx, |input, cx| {
+            input.set_content(format!("{}", time_sig_numerator), cx);
+        });
+        self.time_sig_denominator_input.update(cx, |input, cx| {
+            input.set_content(format!("{}", time_sig_denominator), cx);
+        });
+    }
+
+    fn ticks_to_musical_time(&self, ticks: u64, time_sig_numerator: u32) -> (u32, u32, u32) {
         let ticks_per_beat = PPQN;
         let ticks_per_sixteenth = PPQN / 4;
-        let ticks_per_bar = ticks_per_beat * numerator as u64;
+        let ticks_per_bar = ticks_per_beat * time_sig_numerator as u64;
 
         let bar = (ticks / ticks_per_bar) + 1;
         let beat = ((ticks % ticks_per_bar) / ticks_per_beat) + 1;
@@ -104,13 +104,8 @@ impl Header {
         (bar as u32, beat as u32, division as u32)
     }
 
-    fn format_musical_time(&self, ticks: u64) -> String {
-        let (bar, beat, division) = self.ticks_to_musical_time(ticks);
-        format!("{}.{}.{}", bar, beat, division)
-    }
-
-    fn format_seconds(&self, ticks: u64) -> String {
-        let seconds_per_beat = 60.0 / self.bpm;
+    fn format_seconds(&self, ticks: u64, bpm: f64) -> String {
+        let seconds_per_beat = 60.0 / bpm;
         let seconds_per_tick = seconds_per_beat / PPQN as f64;
         let total_seconds = ticks as f64 * seconds_per_tick;
         let minutes = (total_seconds / 60.0) as u32;
@@ -138,8 +133,9 @@ impl Focusable for Header {
 impl Render for Header {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let (bar, beat, division) = self.ticks_to_musical_time(self.current_tick);
-        let time_seconds = self.format_seconds(self.current_tick);
+        let (bar, beat, division) =
+            self.ticks_to_musical_time(self.current_tick, self.time_sig_numerator);
+        let time_seconds = self.format_seconds(self.current_tick, self.bpm);
 
         div()
             .w_full()

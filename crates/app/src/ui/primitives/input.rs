@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler, Entity,
-    EntityInputHandler, FocusHandle, Focusable, GlobalElementId, Keystroke, LayoutId, MouseButton,
+    EntityInputHandler, FocusHandle, Focusable, GlobalElementId, LayoutId, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, ShapedLine,
     SharedString, Style, TextRun, UTF16Selection, UnderlineStyle, Window, actions, div, fill, hsla,
     point, prelude::*, px, relative, rgb, rgba, size,
@@ -38,6 +38,7 @@ pub struct Input {
     last_layout: Option<ShapedLine>,
     last_bounds: Option<Bounds<Pixels>>,
     is_selecting: bool,
+    numeric_only: bool,
     on_change: Option<Box<dyn Fn(String, &mut Window, &mut Context<Self>) + 'static>>,
 }
 
@@ -53,6 +54,7 @@ impl Input {
             last_layout: None,
             last_bounds: None,
             is_selecting: false,
+            numeric_only: false,
             on_change: None,
         }
     }
@@ -67,12 +69,23 @@ impl Input {
         self
     }
 
+    pub fn numeric_only(mut self, numeric_only: bool) -> Self {
+        self.numeric_only = numeric_only;
+        self
+    }
+
     pub fn on_change(
         mut self,
         callback: impl Fn(String, &mut Window, &mut Context<Self>) + 'static,
     ) -> Self {
         self.on_change = Some(Box::new(callback));
         self
+    }
+
+    pub fn set_content(&mut self, content: impl Into<SharedString>, cx: &mut Context<Self>) {
+        self.content = content.into();
+        self.selected_range = 0..0;
+        cx.notify();
     }
 
     fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
@@ -333,10 +346,20 @@ impl EntityInputHandler for Input {
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
 
+        // Filter input if numeric_only is enabled
+        let filtered_text = if self.numeric_only {
+            new_text
+                .chars()
+                .filter(|c| c.is_ascii_digit())
+                .collect::<String>()
+        } else {
+            new_text.to_string()
+        };
+
         self.content =
-            (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
+            (self.content[0..range.start].to_owned() + &filtered_text + &self.content[range.end..])
                 .into();
-        self.selected_range = range.start + new_text.len()..range.start + new_text.len();
+        self.selected_range = range.start + filtered_text.len()..range.start + filtered_text.len();
         self.marked_range.take();
 
         if let Some(callback) = self.on_change.as_ref() {
@@ -630,32 +653,22 @@ impl Focusable for Input {
     }
 }
 
-pub fn input(
-    focus_handle: FocusHandle,
-    content: impl Into<SharedString>,
-    on_change: impl Fn(String, &mut Window, &mut Context<Input>) + 'static,
-) -> Input {
-    Input::new(focus_handle)
-        .content(content)
-        .on_change(on_change)
-}
-
 pub fn bind_input_keys(cx: &mut App) {
     use gpui::KeyBinding;
 
     cx.bind_keys([
-        KeyBinding::new("backspace", Backspace, None),
-        KeyBinding::new("delete", Delete, None),
-        KeyBinding::new("left", Left, None),
-        KeyBinding::new("right", Right, None),
-        KeyBinding::new("shift-left", SelectLeft, None),
-        KeyBinding::new("shift-right", SelectRight, None),
-        KeyBinding::new("cmd-a", SelectAll, None),
-        KeyBinding::new("cmd-v", Paste, None),
-        KeyBinding::new("cmd-c", Copy, None),
-        KeyBinding::new("cmd-x", Cut, None),
-        KeyBinding::new("home", Home, None),
-        KeyBinding::new("end", End, None),
-        KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, None),
+        KeyBinding::new("backspace", Backspace, Some("Input")),
+        KeyBinding::new("delete", Delete, Some("Input")),
+        KeyBinding::new("left", Left, Some("Input")),
+        KeyBinding::new("right", Right, Some("Input")),
+        KeyBinding::new("shift-left", SelectLeft, Some("Input")),
+        KeyBinding::new("shift-right", SelectRight, Some("Input")),
+        KeyBinding::new("cmd-a", SelectAll, Some("Input")),
+        KeyBinding::new("cmd-v", Paste, Some("Input")),
+        KeyBinding::new("cmd-c", Copy, Some("Input")),
+        KeyBinding::new("cmd-x", Cut, Some("Input")),
+        KeyBinding::new("home", Home, Some("Input")),
+        KeyBinding::new("end", End, Some("Input")),
+        KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, Some("Input")),
     ]);
 }

@@ -1,7 +1,7 @@
 use crate::theme::{ActiveTheme, to_dark_variant};
 use daw_core::{Clip, ClipId, PPQN, Track as TransportTrack, WaveformData};
 use gpui::{
-    App, Bounds, Context, CursorStyle, ElementId, EventEmitter, Hsla, Point, Size, Window, canvas,
+    Bounds, Context, CursorStyle, ElementId, EventEmitter, Hsla, Point, Size, Window, canvas,
     div, fill, prelude::*, px,
 };
 use std::sync::Arc;

@@ -35,7 +35,14 @@ impl Daw {
         let time_signature = session.time_signature();
         let tempo = session.tempo();
 
-        let header = cx.new(|cx| Header::new(0, time_signature.into(), tempo, cx));
+        let header = cx.new(|cx| {
+            Header::new(
+                tempo,
+                time_signature.numerator,
+                time_signature.denominator,
+                cx,
+            )
+        });
         cx.subscribe(
             &header,
             |this, header, event: &HeaderEvent, cx| match event {
@@ -87,18 +94,27 @@ impl Daw {
         // Load new session
         match Session::from_project(&path) {
             Ok(session) => {
-                // Update session
+                // Get new project settings
+                let time_signature = session.time_signature();
+                let tempo = session.tempo();
+
+                // Update session and project state
                 self.session = session;
                 self.project_path = path;
                 self.selected_clips.clear();
 
-                // Update header
+                // Update header with new values
                 self.header_handle.update(cx, |header, cx| {
                     header.set_tick(0, cx);
                     header.set_playing(false, cx);
+                    header.update_values(
+                        tempo,
+                        time_signature.numerator,
+                        time_signature.denominator,
+                        cx,
+                    );
                 });
 
-                // Update playhead
                 self.playhead_handle.update(cx, |playhead, cx| {
                     playhead.set_tick(0);
                     cx.notify();
@@ -316,6 +332,7 @@ fn main() {
 
         // Bind keys
         cx.bind_keys(keybindings());
+        ui::primitives::input::bind_input_keys(cx);
 
         // Open window
         cx.open_window(WindowOptions::default(), |_, cx| cx.new(|cx| Daw::new(cx)))
