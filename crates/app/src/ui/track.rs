@@ -1,8 +1,8 @@
 use crate::theme::{ActiveTheme, to_dark_variant};
 use daw_core::{Clip, ClipId, PPQN, Track as TransportTrack, WaveformData};
 use gpui::{
-    Bounds, Context, CursorStyle, ElementId, EventEmitter, Hsla, Point, Size, Window, canvas,
-    div, fill, prelude::*, px,
+    Bounds, Context, CursorStyle, ElementId, EventEmitter, Hsla, Point, Size, Window, canvas, div,
+    fill, prelude::*, px,
 };
 use std::sync::Arc;
 
@@ -158,9 +158,31 @@ fn render_clip(
 }
 
 fn render_waveform(waveform: Arc<WaveformData>, color: Hsla) -> impl IntoElement {
+    use std::cell::Cell;
+
+    // Cache previous render state to avoid unnecessary repaints
+    let last_bounds = Cell::new(None::<Bounds<gpui::Pixels>>);
+    let last_color = Cell::new(None::<Hsla>);
+
     canvas(
-        move |bounds, _window, _cx| (bounds, waveform.clone()),
-        move |_bounds, (bounds_data, waveform), window, _cx| {
+        move |bounds, _window, _cx| (bounds, waveform.clone(), color),
+        move |_bounds, (bounds_data, waveform, current_color), window, _cx| {
+            // Check if anything changed since last paint
+            let should_repaint = {
+                let prev_bounds = last_bounds.get();
+                let prev_color = last_color.get();
+
+                prev_bounds != Some(bounds_data) || prev_color != Some(current_color)
+            };
+
+            if !should_repaint {
+                return;
+            }
+
+            // Update cache
+            last_bounds.set(Some(bounds_data));
+            last_color.set(Some(current_color));
+
             let height: f32 = bounds_data.size.height.into();
             let width: f32 = bounds_data.size.width.into();
             let origin_x: f32 = bounds_data.origin.x.into();
@@ -193,7 +215,7 @@ fn render_waveform(waveform: Arc<WaveformData>, color: Hsla) -> impl IntoElement
                     },
                 };
 
-                window.paint_quad(fill(bar_bounds, color));
+                window.paint_quad(fill(bar_bounds, current_color));
             }
         },
     )

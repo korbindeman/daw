@@ -22,6 +22,7 @@ struct Daw {
     focus_handle: FocusHandle,
     project_path: PathBuf,
     selected_clips: Vec<ClipId>,
+    last_tick: Option<u64>,
 }
 
 impl Daw {
@@ -56,23 +57,6 @@ impl Daw {
         let pixels_per_beat = session.time_context().pixels_per_beat;
         let playhead = cx.new(|_| Playhead::new(0, pixels_per_beat));
 
-        cx.spawn(
-            async |this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
-                loop {
-                    Timer::after(Duration::from_millis(16)).await;
-                    let result = cx.update(|cx| {
-                        this.update(cx, |daw, cx| {
-                            daw.poll_status(cx);
-                        })
-                    });
-                    if result.is_err() {
-                        break;
-                    }
-                }
-            },
-        )
-        .detach();
-
         let focus_handle = cx.focus_handle();
 
         Self {
@@ -82,6 +66,7 @@ impl Daw {
             focus_handle,
             project_path: path.to_path_buf(),
             selected_clips: Vec::new(),
+            last_tick: None,
         }
     }
 
@@ -139,19 +124,49 @@ impl Daw {
 
     fn poll_status(&mut self, cx: &mut Context<Self>) {
         if let Some(tick) = self.session.poll() {
-            self.header_handle.update(cx, |header, cx| {
-                header.set_tick(tick, cx);
-            });
-            self.playhead_handle.update(cx, |playhead, cx| {
-                playhead.set_tick(tick);
+            // Only update UI if tick actually changed
+            if self.last_tick != Some(tick) {
+                self.last_tick = Some(tick);
+
+                // Batch updates: update entities without individual notifications
+                self.header_handle.update(cx, |header, cx| {
+                    header.set_tick_silent(tick, cx);
+                });
+                self.playhead_handle.update(cx, |playhead, _cx| {
+                    playhead.set_tick(tick);
+                });
+
+                // Single notification for all updates
                 cx.notify();
-            });
+            }
         }
     }
 
     fn play(&mut self, header: &Entity<Header>, cx: &mut Context<Self>) {
         self.session.play();
         header.update(cx, |header, cx| header.set_playing(true, cx));
+
+        // Start polling loop when playback starts
+        cx.spawn(
+            async |this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
+                loop {
+                    Timer::after(Duration::from_millis(16)).await;
+
+                    let should_continue = cx.update(|cx| {
+                        this.update(cx, |daw, cx| {
+                            daw.poll_status(cx);
+                            daw.session.is_playing()
+                        })
+                    });
+
+                    match should_continue {
+                        Ok(Ok(true)) => continue,
+                        _ => break,
+                    }
+                }
+            },
+        )
+        .detach();
     }
 
     fn pause(&mut self, header: &Entity<Header>, cx: &mut Context<Self>) {
@@ -161,6 +176,7 @@ impl Daw {
 
     fn stop(&mut self, header: &Entity<Header>, cx: &mut Context<Self>) {
         self.session.stop();
+        self.last_tick = None;
         header.update(cx, |header, cx| header.set_playing(false, cx));
     }
 }

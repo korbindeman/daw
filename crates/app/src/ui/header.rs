@@ -118,6 +118,11 @@ impl Header {
         cx.notify();
     }
 
+    /// Set tick without triggering a notification (for batched updates)
+    pub fn set_tick_silent(&mut self, tick: u64, _cx: &mut Context<Self>) {
+        self.current_tick = tick;
+    }
+
     pub fn set_playing(&mut self, playing: bool, cx: &mut Context<Self>) {
         self.playing = playing;
         cx.notify();
