@@ -58,6 +58,8 @@ struct SequencerApp {
     error_message: Option<String>,
     loop_count: usize,
     loop_count_input: String,
+    show_inspector: bool,
+    current_project: Option<Project>,
 }
 
 impl SequencerApp {
@@ -83,6 +85,8 @@ impl SequencerApp {
             error_message: None,
             loop_count: 8,
             loop_count_input: "8".to_string(),
+            show_inspector: false,
+            current_project: None,
         }
     }
 
@@ -178,7 +182,9 @@ impl SequencerApp {
     }
 
     fn start_playback(&mut self) {
-        if self.session.is_some() {
+        // Reuse existing session if available (preserves resample cache)
+        if let Some(ref mut session) = self.session {
+            session.play();
             return;
         }
 
@@ -199,7 +205,6 @@ impl SequencerApp {
         if let Some(ref mut session) = self.session {
             session.stop();
         }
-        self.session = None;
         self.current_step = 0;
     }
 
@@ -272,7 +277,10 @@ impl SequencerApp {
                 &path,
                 self.project_name.clone(),
                 self.tempo,
-                (4, 4),
+                (
+                    self.time_signature.numerator,
+                    self.time_signature.denominator,
+                ),
                 &transport_tracks,
                 &audio_paths,
             ) {
@@ -295,6 +303,11 @@ impl SequencerApp {
                 Ok(project) => {
                     self.project_name = project.name;
                     self.tempo = project.tempo;
+                    self.tempo_input = format!("{:.0}", project.tempo);
+                    self.time_signature =
+                        TimeSignature::new(project.time_signature.0, project.time_signature.1);
+                    self.time_sig_numerator_input = format!("{}", project.time_signature.0);
+                    self.time_sig_denominator_input = format!("{}", project.time_signature.1);
                     self.tracks.clear();
 
                     let ticks_per_step = Self::ticks_per_step();
@@ -346,6 +359,61 @@ impl SequencerApp {
         let project: Project = rmp_serde::decode::from_read(reader)?;
         Ok(project)
     }
+
+    fn build_current_project(&self) -> Project {
+        let ticks_per_step = Self::ticks_per_step();
+        let ticks_per_bar = NUM_STEPS as u64 * ticks_per_step;
+
+        let tracks: Vec<daw_core::TrackData> = self
+            .tracks
+            .iter()
+            .enumerate()
+            .filter_map(|(track_idx, track)| {
+                if track.audio.is_none() {
+                    return None;
+                }
+
+                let mut clips: Vec<daw_core::ClipData> = Vec::new();
+                let mut clip_num = 1;
+
+                for loop_idx in 0..self.loop_count {
+                    let bar_offset = loop_idx as u64 * ticks_per_bar;
+
+                    for (step_idx, &active) in track.steps.iter().enumerate() {
+                        if active {
+                            let clip_id = (track_idx * NUM_STEPS * self.loop_count
+                                + loop_idx * NUM_STEPS
+                                + step_idx) as u64;
+
+                            clips.push(daw_core::ClipData {
+                                id: clip_id,
+                                name: format!("{} {}", track.sample_name, clip_num),
+                                start: bar_offset + (step_idx as u64) * ticks_per_step,
+                                audio_path: track.sample_path.clone().unwrap_or_default(),
+                            });
+                            clip_num += 1;
+                        }
+                    }
+                }
+
+                Some(daw_core::TrackData {
+                    id: track_idx as u64,
+                    name: track.sample_name.clone(),
+                    clips,
+                })
+            })
+            .collect();
+
+        Project {
+            name: self.project_name.clone(),
+            tempo: self.tempo,
+            time_signature: (
+                self.time_signature.numerator,
+                self.time_signature.denominator,
+            ),
+            tracks,
+        }
+    }
 }
 
 impl eframe::App for SequencerApp {
@@ -373,6 +441,15 @@ impl eframe::App for SequencerApp {
                 }
                 if ui.button("Load").clicked() {
                     self.load_project();
+                }
+
+                ui.add_space(20.0);
+
+                if ui.button("🔍 Inspector").clicked() {
+                    self.show_inspector = !self.show_inspector;
+                    if self.show_inspector {
+                        self.current_project = Some(self.build_current_project());
+                    }
                 }
             });
 
@@ -531,5 +608,43 @@ impl eframe::App for SequencerApp {
                 }
             });
         });
+
+        // Show inspector in separate OS window
+        if self.show_inspector {
+            let project = self.current_project.clone();
+            let mut is_open = true;
+
+            ctx.show_viewport_immediate(
+                egui::ViewportId::from_hash_of("inspector_window"),
+                egui::ViewportBuilder::default()
+                    .with_title("Project Inspector")
+                    .with_inner_size([700.0, 600.0])
+                    .with_resizable(true),
+                move |ctx, _class| {
+                    if ctx.input(|i| i.viewport().close_requested()) {
+                        is_open = false;
+                    }
+
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        ui.heading("Current Project Structure");
+                        ui.separator();
+
+                        if let Some(ref proj) = project {
+                            egui::ScrollArea::both()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    ui.monospace(format!("{:#?}", proj));
+                                });
+                        } else {
+                            ui.label("No project data available");
+                        }
+                    });
+                },
+            );
+
+            if !is_open {
+                self.show_inspector = false;
+            }
+        }
     }
 }
