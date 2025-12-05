@@ -1,13 +1,14 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use basedrop::Shared;
 use rayon::prelude::*;
 
 use crate::time::{TimeContext, TimeSignature};
+use daw_decode::strip_samples_root;
 use daw_engine::{AudioEngineHandle, EngineClip, EngineCommand, EngineStatus, EngineTrack};
-use daw_project::load_project;
+use daw_project::{load_project, save_project};
 use daw_render::{render_timeline, write_wav};
 use daw_transport::{AudioBuffer, PPQN, Track, resample_audio};
 
@@ -35,6 +36,12 @@ pub struct Session {
     playback_state: PlaybackState,
     /// Cache of resampled audio buffers, keyed by (original audio pointer, target sample rate)
     resample_cache: HashMap<ResampleCacheKey, Arc<AudioBuffer>>,
+    /// Mapping from clip ID to audio file path (relative to samples root)
+    audio_paths: HashMap<u64, PathBuf>,
+    /// Path to the project file (if loaded from or saved to a file)
+    project_path: Option<PathBuf>,
+    /// Project name
+    name: String,
 }
 
 impl Session {
@@ -42,6 +49,15 @@ impl Session {
         tracks: Vec<Track>,
         tempo: f64,
         time_signature: impl Into<TimeSignature>,
+    ) -> anyhow::Result<Self> {
+        Self::new_with_audio_paths(tracks, tempo, time_signature, HashMap::new())
+    }
+
+    pub fn new_with_audio_paths(
+        tracks: Vec<Track>,
+        tempo: f64,
+        time_signature: impl Into<TimeSignature>,
+        audio_paths: HashMap<u64, PathBuf>,
     ) -> anyhow::Result<Self> {
         let time_context = TimeContext::new(tempo, time_signature.into(), 100.0);
 
@@ -57,6 +73,9 @@ impl Session {
             current_tick: 0,
             playback_state: PlaybackState::Stopped,
             resample_cache: HashMap::new(),
+            audio_paths,
+            project_path: None,
+            name: "Untitled".to_string(),
         };
 
         // Now send the real tracks with correct sample rate conversion
@@ -67,7 +86,41 @@ impl Session {
 
     pub fn from_project(path: &Path) -> anyhow::Result<Self> {
         let project = load_project(path)?;
-        Self::new(project.tracks, project.tempo, project.time_signature)
+        let mut session =
+            Self::new_with_audio_paths(project.tracks, project.tempo, project.time_signature, project.audio_paths)?;
+        session.project_path = Some(path.to_path_buf());
+        session.name = project.name;
+        Ok(session)
+    }
+
+    pub fn save(&self, path: &Path) -> anyhow::Result<()> {
+        // Strip samples root from all audio paths before saving
+        let stripped_paths: HashMap<u64, PathBuf> = self
+            .audio_paths
+            .iter()
+            .map(|(id, p)| (*id, strip_samples_root(p)))
+            .collect();
+
+        save_project(
+            path,
+            self.name.clone(),
+            self.tempo(),
+            (
+                self.time_signature().numerator,
+                self.time_signature().denominator,
+            ),
+            &self.tracks,
+            &stripped_paths,
+        )?;
+        Ok(())
+    }
+
+    pub fn save_in_place(&self) -> anyhow::Result<()> {
+        let path = self
+            .project_path
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No project path set"))?;
+        self.save(path)
     }
 
     pub fn play(&mut self) {
@@ -272,5 +325,29 @@ impl Session {
         let channels = 2;
         let buffer = render_timeline(&self.tracks, self.tempo(), sample_rate, channels);
         write_wav(&buffer, path)
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+
+    pub fn project_path(&self) -> Option<&Path> {
+        self.project_path.as_deref()
+    }
+
+    pub fn set_project_path(&mut self, path: PathBuf) {
+        self.project_path = Some(path);
+    }
+
+    pub fn audio_paths(&self) -> &HashMap<u64, PathBuf> {
+        &self.audio_paths
+    }
+
+    pub fn audio_paths_mut(&mut self) -> &mut HashMap<u64, PathBuf> {
+        &mut self.audio_paths
     }
 }

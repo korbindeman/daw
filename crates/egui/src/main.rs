@@ -1,11 +1,9 @@
 use daw_core::{
-    AudioBuffer, Clip, ClipId, PPQN, Project, ProjectError, Session, TimeSignature, Track, TrackId,
-    WaveformData, decode_file, save_project,
+    AudioBuffer, Clip, ClipId, PPQN, Project, Session, TimeSignature, Track, TrackId, WaveformData,
+    decode_file,
 };
 use eframe::egui;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -289,6 +287,7 @@ impl SequencerApp {
                             let clip_id = (track_idx * NUM_STEPS * track.pages.len()
                                 + page_idx * NUM_STEPS
                                 + step_idx) as u64;
+                            // Session::save() will strip the samples/ prefix
                             audio_paths.insert(clip_id, sample_path.clone());
 
                             let waveform = WaveformData::from_audio_buffer(audio, 512);
@@ -318,22 +317,26 @@ impl SequencerApp {
             .set_file_name(&format!("{}.dawproj", self.project_name))
             .save_file()
         {
-            match save_project(
-                &path,
-                self.project_name.clone(),
+            // Create a temporary session just for saving
+            match Session::new_with_audio_paths(
+                transport_tracks,
                 self.tempo,
-                (
-                    self.time_signature.numerator,
-                    self.time_signature.denominator,
-                ),
-                &transport_tracks,
-                &audio_paths,
+                self.time_signature,
+                audio_paths,
             ) {
-                Ok(()) => {
-                    self.error_message = None;
+                Ok(mut save_session) => {
+                    save_session.set_name(self.project_name.clone());
+                    match save_session.save(&path) {
+                        Ok(()) => {
+                            self.error_message = None;
+                        }
+                        Err(e) => {
+                            self.error_message = Some(format!("Failed to save: {}", e));
+                        }
+                    }
                 }
                 Err(e) => {
-                    self.error_message = Some(format!("Failed to save: {}", e));
+                    self.error_message = Some(format!("Failed to create session for save: {}", e));
                 }
             }
         }
@@ -344,21 +347,21 @@ impl SequencerApp {
             .add_filter("DAW Project", &["dawproj"])
             .pick_file()
         {
-            match Self::load_project_file(&path) {
-                Ok(project) => {
-                    self.project_name = project.name;
-                    self.tempo = project.tempo;
-                    self.tempo_input = format!("{:.0}", project.tempo);
-                    self.time_signature =
-                        TimeSignature::new(project.time_signature.0, project.time_signature.1);
-                    self.time_sig_numerator_input = format!("{}", project.time_signature.0);
-                    self.time_sig_denominator_input = format!("{}", project.time_signature.1);
+            match Session::from_project(&path) {
+                Ok(loaded_session) => {
+                    self.project_name = loaded_session.name().to_string();
+                    self.tempo = loaded_session.tempo();
+                    self.tempo_input = format!("{:.0}", loaded_session.tempo());
+                    let time_sig = loaded_session.time_signature();
+                    self.time_signature = time_sig;
+                    self.time_sig_numerator_input = format!("{}", time_sig.numerator);
+                    self.time_sig_denominator_input = format!("{}", time_sig.denominator);
                     self.tracks.clear();
 
                     let ticks_per_step = Self::ticks_per_step();
                     let ticks_per_bar = NUM_STEPS as u64 * ticks_per_step;
 
-                    for track_data in &project.tracks {
+                    for track in loaded_session.tracks() {
                         let mut track_state = SequencerTrackState::default();
                         track_state.pages.clear(); // Clear the default page
                         track_state.volume = track_data.volume; // Load volume from project
@@ -376,26 +379,22 @@ impl SequencerApp {
                             track_state.pages.push([false; NUM_STEPS]);
                         }
 
-                        for clip in &track_data.clips {
-                            let page_idx = (clip.start / ticks_per_bar) as usize;
-                            let step_idx = ((clip.start % ticks_per_bar) / ticks_per_step) as usize;
+                        for clip in &track.clips {
+                            let step_idx = (clip.start / ticks_per_step) as usize;
+                            if step_idx < NUM_STEPS {
+                                track_state.steps[step_idx] = true;
 
-                            if page_idx < track_state.pages.len() && step_idx < NUM_STEPS {
-                                track_state.pages[page_idx][step_idx] = true;
-
-                                if track_state.sample_path.is_none()
-                                    && !clip.audio_path.as_os_str().is_empty()
-                                {
-                                    track_state.sample_path = Some(clip.audio_path.clone());
-                                    track_state.sample_name = clip
-                                        .audio_path
-                                        .file_stem()
-                                        .map(|s| s.to_string_lossy().to_string())
-                                        .unwrap_or_else(|| "Unknown".to_string());
-
-                                    if let Ok(buffer) = decode_file(&clip.audio_path) {
-                                        track_state.audio = Some(Arc::new(buffer));
+                                // Get the audio path from the session's audio_paths map
+                                if track_state.sample_path.is_none() {
+                                    if let Some(audio_path) = loaded_session.audio_paths().get(&clip.id.0) {
+                                        track_state.sample_path = Some(audio_path.clone());
+                                        track_state.sample_name = audio_path
+                                            .file_stem()
+                                            .map(|s| s.to_string_lossy().to_string())
+                                            .unwrap_or_else(|| "Unknown".to_string());
                                     }
+                                    // Use the already-decoded audio from the clip
+                                    track_state.audio = Some(clip.audio.clone());
                                 }
                             }
                         }
@@ -415,13 +414,6 @@ impl SequencerApp {
                 }
             }
         }
-    }
-
-    fn load_project_file(path: &std::path::Path) -> Result<Project, ProjectError> {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        let project: Project = rmp_serde::decode::from_read(reader)?;
-        Ok(project)
     }
 
     fn build_current_project(&self) -> Project {
