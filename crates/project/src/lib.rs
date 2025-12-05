@@ -20,6 +20,12 @@ pub struct TrackData {
     pub id: u64,
     pub name: String,
     pub clips: Vec<ClipData>,
+    #[serde(default = "default_volume")]
+    pub volume: f32, // Linear gain multiplier (0.0 = silence, 1.0 = unity)
+}
+
+fn default_volume() -> f32 {
+    1.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +82,7 @@ mod tests {
                             name: "Snare".to_string(),
                         },
                     ],
+                    volume: 1.0,
                 },
                 TrackData {
                     id: 2,
@@ -86,6 +93,7 @@ mod tests {
                         audio_path: PathBuf::from("audio/hihat.wav"),
                         name: "Hi-Hat".to_string(),
                     }],
+                    volume: 0.8,
                 },
             ],
         }
@@ -115,6 +123,7 @@ mod tests {
                 audio_path: PathBuf::from("samples/test.wav"),
                 name: "Test".to_string(),
             }],
+            volume: 0.75,
         };
 
         let bytes = rmp_serde::encode::to_vec(&track).expect("serialize");
@@ -171,6 +180,7 @@ mod tests {
             id: 5,
             name: "Empty Track".to_string(),
             clips: vec![],
+            volume: 1.0,
         };
 
         let bytes = rmp_serde::encode::to_vec(&track).expect("serialize");

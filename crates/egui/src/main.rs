@@ -29,8 +29,9 @@ fn main() -> eframe::Result<()> {
 struct SequencerTrackState {
     sample_path: Option<PathBuf>,
     sample_name: String,
-    steps: [bool; NUM_STEPS],
+    pages: Vec<[bool; NUM_STEPS]>, // Each page has 16 steps
     audio: Option<Arc<AudioBuffer>>,
+    volume: f32, // Linear gain multiplier (0.0 to 1.0)
 }
 
 impl Default for SequencerTrackState {
@@ -38,8 +39,9 @@ impl Default for SequencerTrackState {
         Self {
             sample_path: None,
             sample_name: "Select sample...".to_string(),
-            steps: [false; NUM_STEPS],
+            pages: vec![[false; NUM_STEPS]], // Start with one empty page
             audio: None,
+            volume: 1.0, // Unity gain by default
         }
     }
 }
@@ -53,11 +55,12 @@ struct SequencerApp {
     time_sig_numerator_input: String,
     time_sig_denominator_input: String,
     current_step: usize,
+    current_page: usize,
+    playback_page: usize,
+    loop_current_page: bool,
     session: Option<Session>,
     project_name: String,
     error_message: Option<String>,
-    loop_count: usize,
-    loop_count_input: String,
     show_inspector: bool,
     current_project: Option<Project>,
 }
@@ -80,11 +83,12 @@ impl SequencerApp {
             time_sig_numerator_input: "4".to_string(),
             time_sig_denominator_input: "4".to_string(),
             current_step: 0,
+            current_page: 0,
+            playback_page: 0,
+            loop_current_page: false,
             session: None,
             project_name: "Untitled".to_string(),
             error_message: None,
-            loop_count: 8,
-            loop_count_input: "8".to_string(),
             show_inspector: false,
             current_project: None,
         }
@@ -146,24 +150,46 @@ impl SequencerApp {
                 let mut clips: Vec<Clip> = Vec::new();
                 let mut clip_num = 1;
 
-                // Duplicate the 16-step pattern loop_count times
-                for loop_idx in 0..self.loop_count {
-                    let bar_offset = loop_idx as u64 * ticks_per_bar;
+                if self.loop_current_page {
+                    // Only use the current page
+                    if self.current_page < track.pages.len() {
+                        let page_steps = &track.pages[self.current_page];
+                        for (step_idx, &active) in page_steps.iter().enumerate() {
+                            if active {
+                                let waveform = WaveformData::from_audio_buffer(audio, 512);
+                                let clip_id = (track_idx * NUM_STEPS + step_idx) as u64;
+                                clips.push(Clip {
+                                    id: ClipId(clip_id),
+                                    name: format!("{} {}", track.sample_name, clip_num),
+                                    start: (step_idx as u64) * ticks_per_step,
+                                    audio: audio.clone(),
+                                    waveform: Arc::new(waveform),
+                                });
+                                clip_num += 1;
+                            }
+                        }
+                    }
+                } else {
+                    // Iterate through all pages
+                    for (page_idx, page_steps) in track.pages.iter().enumerate() {
+                        let bar_offset = page_idx as u64 * ticks_per_bar;
 
-                    for (step_idx, &active) in track.steps.iter().enumerate() {
-                        if active {
-                            let waveform = WaveformData::from_audio_buffer(audio, 512);
-                            let clip_id = (track_idx * NUM_STEPS * self.loop_count
-                                + loop_idx * NUM_STEPS
-                                + step_idx) as u64;
-                            clips.push(Clip {
-                                id: ClipId(clip_id),
-                                name: format!("{} {}", track.sample_name, clip_num),
-                                start: bar_offset + (step_idx as u64) * ticks_per_step,
-                                audio: audio.clone(),
-                                waveform: Arc::new(waveform),
-                            });
-                            clip_num += 1;
+                        for (step_idx, &active) in page_steps.iter().enumerate() {
+                            if active {
+                                let waveform = WaveformData::from_audio_buffer(audio, 512);
+                                let clip_id = (track_idx * NUM_STEPS * track.pages.len()
+                                    + page_idx * NUM_STEPS
+                                    + step_idx)
+                                    as u64;
+                                clips.push(Clip {
+                                    id: ClipId(clip_id),
+                                    name: format!("{} {}", track.sample_name, clip_num),
+                                    start: bar_offset + (step_idx as u64) * ticks_per_step,
+                                    audio: audio.clone(),
+                                    waveform: Arc::new(waveform),
+                                });
+                                clip_num += 1;
+                            }
                         }
                     }
                 }
@@ -176,6 +202,7 @@ impl SequencerApp {
                     id: TrackId(track_idx as u64),
                     name: track.sample_name.clone(),
                     clips,
+                    volume: track.volume,
                 })
             })
             .collect()
@@ -206,6 +233,7 @@ impl SequencerApp {
             session.stop();
         }
         self.current_step = 0;
+        self.playback_page = 0;
     }
 
     fn update_playback_position(&mut self) {
@@ -213,9 +241,25 @@ impl SequencerApp {
             if let Some(ticks) = session.poll() {
                 let ticks_per_step = Self::ticks_per_step();
                 let ticks_per_bar = NUM_STEPS as u64 * ticks_per_step;
-                let total_ticks = ticks_per_bar * self.loop_count as u64;
-                let wrapped_ticks = ticks % total_ticks;
-                self.current_step = ((wrapped_ticks % ticks_per_bar) / ticks_per_step) as usize;
+
+                if self.loop_current_page {
+                    // Loop the current page only
+                    let wrapped_ticks = ticks % ticks_per_bar;
+                    self.playback_page = self.current_page;
+                    self.current_step = (wrapped_ticks / ticks_per_step) as usize;
+                } else {
+                    // Play through all pages sequentially
+                    let total_pages = self.tracks.iter().map(|t| t.pages.len()).max().unwrap_or(1);
+                    let total_ticks = ticks_per_bar * total_pages as u64;
+                    let wrapped_ticks = ticks % total_ticks;
+
+                    let calculated_page = (wrapped_ticks / ticks_per_bar) as usize;
+                    self.playback_page = calculated_page.min(total_pages.saturating_sub(1));
+                    self.current_step = ((wrapped_ticks % ticks_per_bar) / ticks_per_step) as usize;
+
+                    // Auto-scroll to follow playback (clamp to valid range)
+                    self.current_page = self.playback_page.min(total_pages.saturating_sub(1));
+                }
             }
         }
     }
@@ -236,14 +280,14 @@ impl SequencerApp {
                 let mut clips: Vec<Clip> = Vec::new();
                 let mut clip_num = 1;
 
-                // Duplicate the 16-step pattern loop_count times
-                for loop_idx in 0..self.loop_count {
-                    let bar_offset = loop_idx as u64 * ticks_per_bar;
+                // Iterate through all pages
+                for (page_idx, page_steps) in track.pages.iter().enumerate() {
+                    let bar_offset = page_idx as u64 * ticks_per_bar;
 
-                    for (step_idx, &active) in track.steps.iter().enumerate() {
+                    for (step_idx, &active) in page_steps.iter().enumerate() {
                         if active {
-                            let clip_id = (track_idx * NUM_STEPS * self.loop_count
-                                + loop_idx * NUM_STEPS
+                            let clip_id = (track_idx * NUM_STEPS * track.pages.len()
+                                + page_idx * NUM_STEPS
                                 + step_idx) as u64;
                             audio_paths.insert(clip_id, sample_path.clone());
 
@@ -264,6 +308,7 @@ impl SequencerApp {
                     id: TrackId(track_idx as u64),
                     name: track.sample_name.clone(),
                     clips,
+                    volume: track.volume,
                 })
             })
             .collect();
@@ -311,14 +356,32 @@ impl SequencerApp {
                     self.tracks.clear();
 
                     let ticks_per_step = Self::ticks_per_step();
+                    let ticks_per_bar = NUM_STEPS as u64 * ticks_per_step;
 
                     for track_data in &project.tracks {
                         let mut track_state = SequencerTrackState::default();
+                        track_state.pages.clear(); // Clear the default page
+                        track_state.volume = track_data.volume; // Load volume from project
+
+                        // Group clips by page
+                        let max_page = track_data
+                            .clips
+                            .iter()
+                            .map(|clip| (clip.start / ticks_per_bar) as usize)
+                            .max()
+                            .unwrap_or(0);
+
+                        // Initialize pages
+                        for _ in 0..=max_page {
+                            track_state.pages.push([false; NUM_STEPS]);
+                        }
 
                         for clip in &track_data.clips {
-                            let step_idx = (clip.start / ticks_per_step) as usize;
-                            if step_idx < NUM_STEPS {
-                                track_state.steps[step_idx] = true;
+                            let page_idx = (clip.start / ticks_per_bar) as usize;
+                            let step_idx = ((clip.start % ticks_per_bar) / ticks_per_step) as usize;
+
+                            if page_idx < track_state.pages.len() && step_idx < NUM_STEPS {
+                                track_state.pages[page_idx][step_idx] = true;
 
                                 if track_state.sample_path.is_none()
                                     && !clip.audio_path.as_os_str().is_empty()
@@ -344,6 +407,7 @@ impl SequencerApp {
                         self.tracks.push(SequencerTrackState::default());
                     }
 
+                    self.current_page = 0;
                     self.error_message = None;
                 }
                 Err(e) => {
@@ -376,13 +440,13 @@ impl SequencerApp {
                 let mut clips: Vec<daw_core::ClipData> = Vec::new();
                 let mut clip_num = 1;
 
-                for loop_idx in 0..self.loop_count {
-                    let bar_offset = loop_idx as u64 * ticks_per_bar;
+                for (page_idx, page_steps) in track.pages.iter().enumerate() {
+                    let bar_offset = page_idx as u64 * ticks_per_bar;
 
-                    for (step_idx, &active) in track.steps.iter().enumerate() {
+                    for (step_idx, &active) in page_steps.iter().enumerate() {
                         if active {
-                            let clip_id = (track_idx * NUM_STEPS * self.loop_count
-                                + loop_idx * NUM_STEPS
+                            let clip_id = (track_idx * NUM_STEPS * track.pages.len()
+                                + page_idx * NUM_STEPS
                                 + step_idx) as u64;
 
                             clips.push(daw_core::ClipData {
@@ -400,6 +464,7 @@ impl SequencerApp {
                     id: track_idx as u64,
                     name: track.sample_name.clone(),
                     clips,
+                    volume: track.volume,
                 })
             })
             .collect();
@@ -476,22 +541,6 @@ impl eframe::App for SequencerApp {
 
                 ui.add_space(20.0);
 
-                ui.label("Loops:");
-                let response = ui.text_edit_singleline(&mut self.loop_count_input);
-                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    if let Ok(l) = self.loop_count_input.parse::<usize>() {
-                        if (1..=16).contains(&l) {
-                            self.loop_count = l;
-                        } else {
-                            self.loop_count_input = format!("{}", self.loop_count);
-                        }
-                    } else {
-                        self.loop_count_input = format!("{}", self.loop_count);
-                    }
-                }
-
-                ui.add_space(20.0);
-
                 ui.label("Time Sig:");
                 ui.label(&self.time_sig_numerator_input);
                 ui.label("/");
@@ -509,6 +558,92 @@ impl eframe::App for SequencerApp {
 
                 if ui.button("+ Add Track").clicked() {
                     self.tracks.push(SequencerTrackState::default());
+                }
+            });
+
+            ui.separator();
+
+            // Page controls
+            ui.horizontal(|ui| {
+                let max_pages = self.tracks.iter().map(|t| t.pages.len()).max().unwrap_or(1);
+
+                // Previous page button
+                if ui.button("◀").clicked() && self.current_page > 0 {
+                    self.current_page -= 1;
+                }
+
+                ui.label(format!("Page {} / {}", self.current_page + 1, max_pages));
+
+                // Next page button
+                if ui.button("▶").clicked() && self.current_page < max_pages - 1 {
+                    self.current_page += 1;
+                }
+
+                ui.add_space(10.0);
+
+                // Loop current page toggle
+                let loop_response = ui.checkbox(&mut self.loop_current_page, "Loop Current Page");
+                if loop_response.changed() {
+                    // Rebuild tracks when loop mode changes
+                    let was_playing = self.session.as_ref().map_or(false, |s| s.is_playing());
+                    let tracks = self.build_transport_tracks();
+
+                    if let Some(ref mut session) = self.session {
+                        if was_playing {
+                            session.stop();
+                        }
+                        *session.tracks_mut() = tracks;
+                        session.update_tracks();
+
+                        if was_playing {
+                            session.play();
+                        }
+                    }
+                }
+
+                ui.add_space(10.0);
+
+                // Add empty page
+                if ui.button("+ Empty Page").clicked() {
+                    for track in &mut self.tracks {
+                        track.pages.push([false; NUM_STEPS]);
+                    }
+                }
+
+                // Duplicate current page
+                if ui.button("Duplicate Page").clicked() {
+                    for track in &mut self.tracks {
+                        if self.current_page < track.pages.len() {
+                            let page_to_duplicate = track.pages[self.current_page];
+                            track.pages.push(page_to_duplicate);
+                        } else {
+                            track.pages.push([false; NUM_STEPS]);
+                        }
+                    }
+                }
+
+                // Remove current page
+                if max_pages > 1 && ui.button("Remove Page").clicked() {
+                    for track in &mut self.tracks {
+                        if track.pages.len() > 1 && self.current_page < track.pages.len() {
+                            track.pages.remove(self.current_page);
+                        }
+                    }
+                    // Adjust current_page if needed
+                    let new_max_pages =
+                        self.tracks.iter().map(|t| t.pages.len()).max().unwrap_or(1);
+                    if self.current_page >= new_max_pages {
+                        self.current_page = new_max_pages.saturating_sub(1);
+                    }
+
+                    // Rebuild tracks if playing
+                    if self.session.is_some() {
+                        let tracks = self.build_transport_tracks();
+                        if let Some(ref mut session) = self.session {
+                            *session.tracks_mut() = tracks;
+                            session.update_tracks();
+                        }
+                    }
                 }
             });
 
@@ -569,8 +704,29 @@ impl eframe::App for SequencerApp {
                                 }
                             });
 
-                        for (step_idx, step) in track.steps.iter_mut().enumerate() {
-                            let is_current = is_playing && step_idx == self.current_step;
+                        // Volume slider
+                        let volume_response = ui.add(
+                            egui::Slider::new(&mut track.volume, 0.0..=1.0)
+                                .text("Vol")
+                                .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)),
+                        );
+                        if volume_response.changed() {
+                            tracks_modified = true;
+                        }
+
+                        // Ensure the current page exists for this track
+                        while track.pages.len() <= self.current_page {
+                            track.pages.push([false; NUM_STEPS]);
+                        }
+
+                        // Show steps for the current page
+                        let current_page_steps = &mut track.pages[self.current_page];
+                        for (step_idx, step) in current_page_steps.iter_mut().enumerate() {
+                            // Highlight step if we're playing and on the same page and step
+                            let is_current = is_playing
+                                && step_idx == self.current_step
+                                && self.current_page == self.playback_page;
+
                             let color = if *step {
                                 if is_current {
                                     egui::Color32::YELLOW
@@ -612,7 +768,6 @@ impl eframe::App for SequencerApp {
         // Show inspector in separate OS window
         if self.show_inspector {
             let project = self.current_project.clone();
-            let mut is_open = true;
 
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("inspector_window"),
@@ -621,10 +776,6 @@ impl eframe::App for SequencerApp {
                     .with_inner_size([700.0, 600.0])
                     .with_resizable(true),
                 move |ctx, _class| {
-                    if ctx.input(|i| i.viewport().close_requested()) {
-                        is_open = false;
-                    }
-
                     egui::CentralPanel::default().show(ctx, |ui| {
                         ui.heading("Current Project Structure");
                         ui.separator();
@@ -641,10 +792,6 @@ impl eframe::App for SequencerApp {
                     });
                 },
             );
-
-            if !is_open {
-                self.show_inspector = false;
-            }
         }
     }
 }

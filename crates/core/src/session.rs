@@ -9,7 +9,7 @@ use crate::time::{TimeContext, TimeSignature};
 use daw_engine::{AudioEngineHandle, EngineClip, EngineCommand, EngineStatus, EngineTrack};
 use daw_project::load_project;
 use daw_render::{render_timeline, write_wav};
-use daw_transport::{resample_audio, AudioBuffer, PPQN, Track};
+use daw_transport::{AudioBuffer, PPQN, Track, resample_audio};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaybackState {
@@ -172,19 +172,26 @@ impl Session {
         // Build engine tracks using cached resampled audio
         self.tracks
             .iter()
-            .map(|track| EngineTrack {
-                clips: track
-                    .clips
-                    .iter()
-                    .filter_map(|clip| {
-                        let key = (Arc::as_ptr(&clip.audio) as usize, sample_rate);
-                        let resampled_audio = self.resample_cache.get(&key)?;
-                        Some(EngineClip {
-                            start: self.ticks_to_samples_with_rate(clip.start, sample_rate),
-                            audio: resampled_audio.clone(),
+            .map(|track| {
+                eprintln!(
+                    "Session sending track '{}' to engine with volume: {}",
+                    track.name, track.volume
+                );
+                EngineTrack {
+                    clips: track
+                        .clips
+                        .iter()
+                        .filter_map(|clip| {
+                            let key = (Arc::as_ptr(&clip.audio) as usize, sample_rate);
+                            let resampled_audio = self.resample_cache.get(&key)?;
+                            Some(EngineClip {
+                                start: self.ticks_to_samples_with_rate(clip.start, sample_rate),
+                                audio: resampled_audio.clone(),
+                            })
                         })
-                    })
-                    .collect(),
+                        .collect(),
+                    volume: track.volume,
+                }
             })
             .collect()
     }

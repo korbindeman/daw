@@ -54,7 +54,7 @@ pub fn render_timeline(
             };
             resampled_clips.push((clip.start, resampled_audio));
         }
-        resampled_tracks.push(resampled_clips);
+        resampled_tracks.push((track.volume, resampled_clips));
     }
 
     let mut samples = vec![0.0f32; total_samples * output_channels];
@@ -63,7 +63,7 @@ pub fn render_timeline(
     for frame_idx in 0..total_samples {
         let position = frame_idx as f64 * ticks_per_sample;
 
-        for resampled_clips in &resampled_tracks {
+        for (track_volume, resampled_clips) in &resampled_tracks {
             for (clip_start, resampled_audio) in resampled_clips {
                 let clip_start_tick = *clip_start as f64;
                 let clip_channels = resampled_audio.channels as usize;
@@ -83,7 +83,7 @@ pub fn render_timeline(
                             let src_idx = source_frame_idx * clip_channels + clip_ch;
                             let dst_idx = frame_idx * output_channels + ch;
                             if src_idx < resampled_audio.samples.len() {
-                                samples[dst_idx] += resampled_audio.samples[src_idx];
+                                samples[dst_idx] += resampled_audio.samples[src_idx] * track_volume;
                             }
                         }
                     }

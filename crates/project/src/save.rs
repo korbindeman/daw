@@ -18,19 +18,26 @@ pub fn save_project(
         time_signature,
         tracks: tracks
             .iter()
-            .map(|track| TrackData {
-                id: track.id.0,
-                name: track.name.clone(),
-                clips: track
-                    .clips
-                    .iter()
-                    .map(|clip| ClipData {
-                        id: clip.id.0,
-                        name: clip.name.clone(),
-                        start: clip.start,
-                        audio_path: audio_paths.get(&clip.id.0).cloned().unwrap_or_default(),
-                    })
-                    .collect(),
+            .map(|track| {
+                eprintln!(
+                    "Saving track '{}' with volume: {}",
+                    track.name, track.volume
+                );
+                TrackData {
+                    id: track.id.0,
+                    name: track.name.clone(),
+                    clips: track
+                        .clips
+                        .iter()
+                        .map(|clip| ClipData {
+                            id: clip.id.0,
+                            name: clip.name.clone(),
+                            start: clip.start,
+                            audio_path: audio_paths.get(&clip.id.0).cloned().unwrap_or_default(),
+                        })
+                        .collect(),
+                    volume: track.volume,
+                }
             })
             .collect(),
     };
@@ -78,6 +85,7 @@ mod tests {
                     waveform: waveform.clone(),
                 },
             ],
+            volume: 0.9,
         };
 
         let mut audio_paths = HashMap::new();
@@ -179,6 +187,7 @@ mod tests {
                 audio,
                 waveform,
             }],
+            volume: 1.0,
         };
 
         save_project(

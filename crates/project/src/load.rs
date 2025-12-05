@@ -79,11 +79,17 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
             });
         }
 
-        tracks.push(Track {
+        let track = Track {
             id: TrackId(track_data.id),
             name: track_data.name.clone(),
             clips,
-        });
+            volume: track_data.volume,
+        };
+        eprintln!(
+            "Loading track '{}' with volume: {}",
+            track.name, track.volume
+        );
+        tracks.push(track);
     }
 
     Ok(LoadedProject {
@@ -169,6 +175,7 @@ mod tests {
                 audio,
                 waveform,
             }],
+            volume: 0.85,
         };
 
         let mut audio_paths = HashMap::new();
@@ -219,6 +226,7 @@ mod tests {
                     audio_path: PathBuf::from("audio/sample.wav"),
                     name: "Sample Clip".to_string(),
                 }],
+                volume: 1.0,
             }],
         };
 
@@ -253,6 +261,7 @@ mod tests {
                     audio_path: PathBuf::from("nonexistent.wav"),
                     name: "Missing Clip".to_string(),
                 }],
+                volume: 1.0,
             }],
         };
 

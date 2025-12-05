@@ -28,6 +28,7 @@ pub struct EngineClip {
 #[derive(Clone)]
 pub struct EngineTrack {
     pub clips: Vec<EngineClip>,
+    pub volume: f32, // Linear gain multiplier (0.0 = silence, 1.0 = unity)
 }
 
 type SharedTracks = Shared<Vec<EngineTrack>>;
@@ -129,6 +130,10 @@ where
         move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
             // Swap in new tracks if available (lock-free)
             while let Ok(new_tracks) = tracks_rx.pop() {
+                // Debug: print track volumes when tracks are updated
+                for (i, track) in new_tracks.iter().enumerate() {
+                    eprintln!("Engine received track {}: volume = {}", i, track.volume);
+                }
                 current_tracks = new_tracks;
             }
 
@@ -164,7 +169,7 @@ where
                                         let clip_ch = ch % clip_channels;
                                         let idx = frame_index * clip_channels + clip_ch;
                                         if idx < clip.audio.samples.len() {
-                                            *mix_sample += clip.audio.samples[idx];
+                                            *mix_sample += clip.audio.samples[idx] * track.volume;
                                         }
                                     }
                                 }

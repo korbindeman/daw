@@ -27,7 +27,7 @@ struct Daw {
 
 impl Daw {
     fn new(cx: &mut Context<Self>) -> Self {
-        Self::from_path(Path::new("projects/test.dawproj"), cx)
+        Self::from_path(Path::new("projects/present_tense.dawproj"), cx)
     }
 
     fn from_path(path: &Path, cx: &mut Context<Self>) -> Self {
