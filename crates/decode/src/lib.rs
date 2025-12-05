@@ -11,28 +11,33 @@ use symphonia::core::probe::Hint;
 
 const SAMPLES_ROOT: &str = "samples";
 
+/// Resolve a sample path to an absolute path.
+/// Accepts paths relative to the samples root (e.g., `cr78/hihat.wav`)
+/// or paths that already include the samples root (e.g., `samples/cr78/hihat.wav`).
 pub fn resolve_sample_path(path: &Path) -> Option<PathBuf> {
+    // Check if path exists as-is
     if path.exists() {
         return Some(path.to_path_buf());
     }
 
-    let file_name = path.file_name()?;
     let root = Path::new(SAMPLES_ROOT);
 
-    if root.join(path).exists() {
-        return Some(root.join(path));
-    }
-
-    for entry in root.read_dir().ok()?.flatten() {
-        if entry.path().is_dir() {
-            let candidate = entry.path().join(file_name);
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
+    // Check if samples_root/path exists
+    let with_root = root.join(path);
+    if with_root.exists() {
+        return Some(with_root);
     }
 
     None
+}
+
+/// Strip the samples root prefix from a path if present.
+/// Use this when saving paths to project files.
+pub fn strip_samples_root(path: &Path) -> PathBuf {
+    let root = Path::new(SAMPLES_ROOT);
+    path.strip_prefix(root)
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|_| path.to_path_buf())
 }
 
 pub fn decode_file(path: &Path) -> anyhow::Result<AudioBuffer> {
