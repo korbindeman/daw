@@ -32,13 +32,14 @@ pub fn save_project(
                     })
                     .collect(),
                 volume: track.volume,
+                enabled: track.enabled,
             })
             .collect(),
     };
 
     let file = File::create(path)?;
     let writer = BufWriter::new(file);
-    rmp_serde::encode::write(&mut { writer }, &project)?;
+    serde_json::to_writer_pretty(writer, &project)?;
 
     Ok(())
 }
@@ -80,6 +81,7 @@ mod tests {
                 },
             ],
             volume: 0.9,
+            enabled: true,
         };
 
         let mut audio_paths = HashMap::new();
@@ -110,7 +112,7 @@ mod tests {
     }
 
     #[test]
-    fn test_save_project_content_is_valid_msgpack() {
+    fn test_save_project_content_is_valid_json() {
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("test.dawproj");
 
@@ -128,7 +130,7 @@ mod tests {
 
         let file = std::fs::File::open(&path).expect("open");
         let reader = std::io::BufReader::new(file);
-        let loaded: crate::Project = rmp_serde::decode::from_read(reader).expect("decode");
+        let loaded: crate::Project = serde_json::from_reader(reader).expect("decode");
 
         assert_eq!(loaded.name, "My Song");
         assert_eq!(loaded.tempo, 140.0);
@@ -154,7 +156,7 @@ mod tests {
 
         let file = std::fs::File::open(&path).expect("open");
         let reader = std::io::BufReader::new(file);
-        let loaded: crate::Project = rmp_serde::decode::from_read(reader).expect("decode");
+        let loaded: crate::Project = serde_json::from_reader(reader).expect("decode");
 
         assert!(loaded.tracks.is_empty());
     }
@@ -182,6 +184,7 @@ mod tests {
                 waveform,
             }],
             volume: 1.0,
+            enabled: true,
         };
 
         save_project(
@@ -196,7 +199,7 @@ mod tests {
 
         let file = std::fs::File::open(&path).expect("open");
         let reader = std::io::BufReader::new(file);
-        let loaded: crate::Project = rmp_serde::decode::from_read(reader).expect("decode");
+        let loaded: crate::Project = serde_json::from_reader(reader).expect("decode");
 
         assert_eq!(loaded.tracks[0].clips[0].audio_path, PathBuf::new());
     }

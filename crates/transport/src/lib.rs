@@ -82,6 +82,7 @@ pub struct Track {
     pub name: String,
     pub clips: Vec<Clip>,
     pub volume: f32, // Linear gain multiplier (0.0 = silence, 1.0 = unity)
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone)]

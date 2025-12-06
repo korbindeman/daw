@@ -17,6 +17,9 @@ fn samples_to_ticks(samples: f64, tempo: f64, sample_rate: u32) -> f64 {
 fn calculate_end_tick(tracks: &[Track], tempo: f64) -> u64 {
     let mut max_end_tick = 0u64;
     for track in tracks {
+        if !track.enabled {
+            continue;
+        }
         for clip in &track.clips {
             let clip_channels = clip.audio.channels as usize;
             let clip_total_frames = clip.audio.samples.len() / clip_channels;
@@ -39,9 +42,12 @@ pub fn render_timeline(
     let total_samples = ticks_to_samples(end_tick as f64, tempo, sample_rate) as usize;
     let output_channels = channels as usize;
 
-    // Pre-resample all clips to output sample rate
+    // Pre-resample all clips to output sample rate (skip disabled tracks)
     let mut resampled_tracks = Vec::new();
     for track in tracks {
+        if !track.enabled {
+            continue;
+        }
         let mut resampled_clips = Vec::new();
         for clip in &track.clips {
             let resampled_audio = if clip.audio.sample_rate != sample_rate {

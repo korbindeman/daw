@@ -20,12 +20,8 @@ pub struct TrackData {
     pub id: u64,
     pub name: String,
     pub clips: Vec<ClipData>,
-    #[serde(default = "default_volume")]
     pub volume: f32, // Linear gain multiplier (0.0 = silence, 1.0 = unity)
-}
-
-fn default_volume() -> f32 {
-    1.0
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,7 +38,7 @@ pub enum ProjectError {
     Io(#[from] std::io::Error),
 
     #[error("Serialization error: {0}")]
-    Serialize(#[from] rmp_serde::encode::Error),
+    Serialize(#[from] serde_json::Error),
 
     #[error("Deserialization error: {0}")]
     Deserialize(#[from] rmp_serde::decode::Error),
@@ -83,6 +79,7 @@ mod tests {
                         },
                     ],
                     volume: 1.0,
+                    enabled: true,
                 },
                 TrackData {
                     id: 2,
@@ -94,6 +91,7 @@ mod tests {
                         name: "Hi-Hat".to_string(),
                     }],
                     volume: 0.8,
+                    enabled: true,
                 },
             ],
         }
@@ -103,8 +101,8 @@ mod tests {
     fn test_project_serialization_roundtrip() {
         let project = sample_project();
 
-        let bytes = rmp_serde::encode::to_vec(&project).expect("serialize");
-        let decoded: Project = rmp_serde::decode::from_slice(&bytes).expect("deserialize");
+        let json = serde_json::to_string(&project).expect("serialize");
+        let decoded: Project = serde_json::from_str(&json).expect("deserialize");
 
         assert_eq!(decoded.name, project.name);
         assert_eq!(decoded.tempo, project.tempo);
@@ -124,10 +122,11 @@ mod tests {
                 name: "Test".to_string(),
             }],
             volume: 0.75,
+            enabled: true,
         };
 
-        let bytes = rmp_serde::encode::to_vec(&track).expect("serialize");
-        let decoded: TrackData = rmp_serde::decode::from_slice(&bytes).expect("deserialize");
+        let json = serde_json::to_string(&track).expect("serialize");
+        let decoded: TrackData = serde_json::from_str(&json).expect("deserialize");
 
         assert_eq!(decoded.id, 42);
         assert_eq!(decoded.clips.len(), 1);
@@ -148,8 +147,8 @@ mod tests {
             name: "Audio".to_string(),
         };
 
-        let bytes = rmp_serde::encode::to_vec(&clip).expect("serialize");
-        let decoded: ClipData = rmp_serde::decode::from_slice(&bytes).expect("deserialize");
+        let json = serde_json::to_string(&clip).expect("serialize");
+        let decoded: ClipData = serde_json::from_str(&json).expect("deserialize");
 
         assert_eq!(decoded.id, clip.id);
         assert_eq!(decoded.start, clip.start);
@@ -165,8 +164,8 @@ mod tests {
             tracks: vec![],
         };
 
-        let bytes = rmp_serde::encode::to_vec(&project).expect("serialize");
-        let decoded: Project = rmp_serde::decode::from_slice(&bytes).expect("deserialize");
+        let json = serde_json::to_string(&project).expect("serialize");
+        let decoded: Project = serde_json::from_str(&json).expect("deserialize");
 
         assert_eq!(decoded.name, "Empty");
         assert_eq!(decoded.tempo, 140.0);
@@ -181,10 +180,11 @@ mod tests {
             name: "Empty Track".to_string(),
             clips: vec![],
             volume: 1.0,
+            enabled: true,
         };
 
-        let bytes = rmp_serde::encode::to_vec(&track).expect("serialize");
-        let decoded: TrackData = rmp_serde::decode::from_slice(&bytes).expect("deserialize");
+        let json = serde_json::to_string(&track).expect("serialize");
+        let decoded: TrackData = serde_json::from_str(&json).expect("deserialize");
 
         assert_eq!(decoded.id, 5);
         assert!(decoded.clips.is_empty());

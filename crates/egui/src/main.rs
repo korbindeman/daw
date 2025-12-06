@@ -201,6 +201,7 @@ impl SequencerApp {
                     name: track.sample_name.clone(),
                     clips,
                     volume: track.volume,
+                    enabled: true,
                 })
             })
             .collect()
@@ -308,6 +309,7 @@ impl SequencerApp {
                     name: track.sample_name.clone(),
                     clips,
                     volume: track.volume,
+                    enabled: true,
                 })
             })
             .collect();
@@ -467,6 +469,7 @@ impl SequencerApp {
                     name: track.sample_name.clone(),
                     clips,
                     volume: track.volume,
+                    enabled: true,
                 })
             })
             .collect();

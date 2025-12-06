@@ -330,9 +330,10 @@ impl Session {
             self.resample_cache.insert(key, audio);
         }
 
-        // Build engine tracks using cached resampled audio
+        // Build engine tracks using cached resampled audio (skip disabled tracks)
         self.tracks
             .iter()
+            .filter(|track| track.enabled)
             .map(|track| {
                 EngineTrack {
                     clips: track
@@ -477,6 +478,22 @@ impl Session {
     pub fn set_metronome_volume(&mut self, volume: f32) {
         self.metronome.volume = volume.clamp(0.0, 1.0);
         if self.metronome.enabled {
+            self.send_tracks_to_engine(self.engine.sample_rate);
+        }
+    }
+
+    // Track enabled/disabled controls
+
+    pub fn set_track_enabled(&mut self, track_id: u64, enabled: bool) {
+        if let Some(track) = self.tracks.iter_mut().find(|t| t.id.0 == track_id) {
+            track.enabled = enabled;
+            self.send_tracks_to_engine(self.engine.sample_rate);
+        }
+    }
+
+    pub fn toggle_track_enabled(&mut self, track_id: u64) {
+        if let Some(track) = self.tracks.iter_mut().find(|t| t.id.0 == track_id) {
+            track.enabled = !track.enabled;
             self.send_tracks_to_engine(self.engine.sample_rate);
         }
     }

@@ -11,4 +11,4 @@ pub use playhead::Playhead;
 pub use ruler::TimelineRuler;
 pub use sidebar::Sidebar;
 pub use track::{Track, TrackEvent};
-pub use track_labels::TrackLabels;
+pub use track_labels::{TrackLabels, TrackLabelsEvent};

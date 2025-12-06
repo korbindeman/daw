@@ -15,12 +15,13 @@ use keybindings::keybindings;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use theme::ActiveTheme;
-use ui::{Header, HeaderEvent, Playhead, Sidebar, TimelineRuler, Track, TrackEvent, TrackLabels};
+use ui::{Header, HeaderEvent, Playhead, Sidebar, TimelineRuler, Track, TrackEvent, TrackLabels, TrackLabelsEvent};
 
 struct Daw {
     session: Session,
     header_handle: Entity<Header>,
     playhead_handle: Entity<Playhead>,
+    track_labels_handle: Entity<TrackLabels>,
     focus_handle: FocusHandle,
     project_path: PathBuf,
     selected_clips: Vec<ClipId>,
@@ -61,12 +62,26 @@ impl Daw {
         let pixels_per_beat = session.time_context().pixels_per_beat;
         let playhead = cx.new(|_| Playhead::new(0, pixels_per_beat));
 
+        let tracks = session.tracks().to_vec();
+        let track_labels = cx.new(|_| TrackLabels::new(tracks));
+        cx.subscribe(&track_labels, |this, _entity, event: &TrackLabelsEvent, cx| {
+            match event {
+                TrackLabelsEvent::ToggleEnabled(track_id) => {
+                    this.session.toggle_track_enabled(*track_id);
+                    this.update_track_labels(cx);
+                    cx.notify();
+                }
+            }
+        })
+        .detach();
+
         let focus_handle = cx.focus_handle();
 
         Self {
             session,
             header_handle: header,
             playhead_handle: playhead,
+            track_labels_handle: track_labels,
             focus_handle,
             project_path: path.to_path_buf(),
             selected_clips: Vec::new(),
@@ -110,6 +125,9 @@ impl Daw {
                     cx.notify();
                 });
 
+                // Update track labels with new tracks
+                self.update_track_labels(cx);
+
                 cx.notify();
             }
             Err(e) => {
@@ -122,6 +140,14 @@ impl Daw {
         self.selected_clips.clear();
         self.selected_clips.push(clip_id.clone());
         cx.notify();
+    }
+
+    fn update_track_labels(&mut self, cx: &mut Context<Self>) {
+        let tracks = self.session.tracks().to_vec();
+        self.track_labels_handle.update(cx, |track_labels, cx| {
+            track_labels.set_tracks(tracks);
+            cx.notify();
+        });
     }
 
     fn poll_status(&mut self, cx: &mut Context<Self>) {
@@ -359,7 +385,7 @@ impl Render for Daw {
                                         tracks_and_playhead.child(self.playhead_handle.clone())
                                     }),
                             )
-                            .child(cx.new(|_| TrackLabels::new(tracks.to_vec()))),
+                            .child(self.track_labels_handle.clone()),
                     ),
             )
     }

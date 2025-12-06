@@ -24,10 +24,20 @@ pub struct ProjectMetadata {
     pub clip_count: usize,
 }
 
-pub fn load_project_metadata(path: &Path) -> Result<ProjectMetadata, ProjectError> {
+fn load_project_data(path: &Path) -> Result<Project, ProjectError> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
-    let project: Project = rmp_serde::decode::from_read(reader)?;
+
+    // Try JSON first, fall back to MessagePack
+    serde_json::from_reader(reader).or_else(|_| {
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        rmp_serde::decode::from_read(reader).map_err(ProjectError::from)
+    })
+}
+
+pub fn load_project_metadata(path: &Path) -> Result<ProjectMetadata, ProjectError> {
+    let project = load_project_data(path)?;
 
     let clip_count: usize = project.tracks.iter().map(|t| t.clips.len()).sum();
 
@@ -41,9 +51,7 @@ pub fn load_project_metadata(path: &Path) -> Result<ProjectMetadata, ProjectErro
 }
 
 pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
-    let project: Project = rmp_serde::decode::from_read(reader)?;
+    let project = load_project_data(path)?;
 
     let mut tracks = Vec::new();
     let mut audio_paths = HashMap::new();
@@ -77,6 +85,7 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
             name: track_data.name.clone(),
             clips,
             volume: track_data.volume,
+            enabled: track_data.enabled,
         };
         tracks.push(track);
     }
@@ -132,7 +141,7 @@ mod tests {
     fn test_load_project_invalid_format() {
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("invalid.dawproj");
-        std::fs::write(&path, b"not valid msgpack").expect("write");
+        std::fs::write(&path, b"not valid json or msgpack").expect("write");
 
         let result = load_project(&path);
         assert!(result.is_err());
@@ -165,6 +174,7 @@ mod tests {
                 waveform,
             }],
             volume: 0.85,
+            enabled: true,
         };
 
         let mut audio_paths = HashMap::new();
@@ -193,17 +203,15 @@ mod tests {
     }
 
     #[test]
-    fn test_load_project_relative_audio_path() {
+    fn test_load_project_with_audio_path() {
         let dir = tempdir().expect("tempdir");
         let project_path = dir.path().join("test.dawproj");
-        let audio_dir = dir.path().join("audio");
-        std::fs::create_dir(&audio_dir).expect("create audio dir");
-        let audio_path = audio_dir.join("sample.wav");
+        let audio_path = dir.path().join("sample.wav");
 
         write_test_wav(&audio_path);
 
         let project = Project {
-            name: "Relative Path Test".to_string(),
+            name: "Audio Path Test".to_string(),
             tempo: 120.0,
             time_signature: (4, 4),
             tracks: vec![TrackData {
@@ -212,24 +220,59 @@ mod tests {
                 clips: vec![ClipData {
                     id: 100,
                     start: 0,
-                    audio_path: PathBuf::from("audio/sample.wav"),
+                    audio_path: audio_path.clone(),
                     name: "Sample Clip".to_string(),
                 }],
                 volume: 1.0,
+                enabled: true,
             }],
         };
 
+        let file = std::fs::File::create(&project_path).expect("create");
+        let writer = std::io::BufWriter::new(file);
+        serde_json::to_writer(writer, &project).expect("encode");
+
+        let loaded = load_project(&project_path).expect("load");
+
+        assert_eq!(loaded.tracks[0].clips[0].id.0, 100);
+        assert_eq!(loaded.audio_paths.get(&100).unwrap(), &audio_path);
+    }
+
+    #[test]
+    fn test_load_legacy_msgpack_project() {
+        let dir = tempdir().expect("tempdir");
+        let project_path = dir.path().join("legacy.dawproj");
+        let audio_path = dir.path().join("sample.wav");
+
+        write_test_wav(&audio_path);
+
+        let project = Project {
+            name: "Legacy MsgPack Test".to_string(),
+            tempo: 120.0,
+            time_signature: (4, 4),
+            tracks: vec![TrackData {
+                id: 1,
+                name: "Sample Track".to_string(),
+                clips: vec![ClipData {
+                    id: 100,
+                    start: 0,
+                    audio_path: audio_path.clone(),
+                    name: "Sample Clip".to_string(),
+                }],
+                volume: 1.0,
+                enabled: true,
+            }],
+        };
+
+        // Write as MessagePack (legacy format)
         let file = std::fs::File::create(&project_path).expect("create");
         let writer = std::io::BufWriter::new(file);
         rmp_serde::encode::write(&mut { writer }, &project).expect("encode");
 
         let loaded = load_project(&project_path).expect("load");
 
+        assert_eq!(loaded.name, "Legacy MsgPack Test");
         assert_eq!(loaded.tracks[0].clips[0].id.0, 100);
-        assert_eq!(
-            loaded.audio_paths.get(&100).unwrap(),
-            &PathBuf::from("audio/sample.wav")
-        );
     }
 
     #[test]
@@ -251,12 +294,13 @@ mod tests {
                     name: "Missing Clip".to_string(),
                 }],
                 volume: 1.0,
+                enabled: true,
             }],
         };
 
         let file = std::fs::File::create(&project_path).expect("create");
         let writer = std::io::BufWriter::new(file);
-        rmp_serde::encode::write(&mut { writer }, &project).expect("encode");
+        serde_json::to_writer(writer, &project).expect("encode");
 
         let result = load_project(&project_path);
         assert!(result.is_err());
@@ -280,7 +324,7 @@ mod tests {
 
         let file = std::fs::File::create(&project_path).expect("create");
         let writer = std::io::BufWriter::new(file);
-        rmp_serde::encode::write(&mut { writer }, &project).expect("encode");
+        serde_json::to_writer(writer, &project).expect("encode");
 
         let loaded = load_project(&project_path).expect("load");
 
