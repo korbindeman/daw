@@ -82,17 +82,14 @@ impl Render for Track {
             .collect();
 
         div()
-            .id(ElementId::Name(
-                format!("track-{}-scroll", self.track.id.0).into(),
-            ))
-            .w_full()
+            .w(px(self.timeline_width as f32))
             .h(px(80.))
             .border_b_1()
             .border_color(theme.border)
-            .overflow_x_scroll()
             .child(
                 div()
-                    .w(px(self.timeline_width as f32))
+                    .w_full()
+                    // .w(px(self.timeline_width as f32))
                     .h_full()
                     .relative()
                     .children(clips),

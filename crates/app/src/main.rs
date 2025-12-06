@@ -382,7 +382,7 @@ impl Render for Daw {
                             .flex_1()
                             .relative()
                             .bg(theme.elevated)
-                            // .overflow_hidden()
+                            .overflow_hidden()
                             .child(
                                 div()
                                     .absolute()
@@ -399,6 +399,8 @@ impl Render for Daw {
                                             timeline_width,
                                         )
                                     }))
+                                    .id("track_container")
+                                    .overflow_scroll()
                                     .child({
                                         let selected_clips = self.selected_clips.clone();
                                         let tracks_and_playhead = div()
