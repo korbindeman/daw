@@ -130,10 +130,6 @@ where
         move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
             // Swap in new tracks if available (lock-free)
             while let Ok(new_tracks) = tracks_rx.pop() {
-                // Debug: print track volumes when tracks are updated
-                for (i, track) in new_tracks.iter().enumerate() {
-                    eprintln!("Engine received track {}: volume = {}", i, track.volume);
-                }
                 current_tracks = new_tracks;
             }
 

@@ -45,7 +45,6 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
     let reader = BufReader::new(file);
     let project: Project = rmp_serde::decode::from_read(reader)?;
 
-    let project_dir = path.parent().unwrap_or(Path::new("."));
     let mut tracks = Vec::new();
     let mut audio_paths = HashMap::new();
 
@@ -53,18 +52,12 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
         let mut clips = Vec::new();
 
         for clip_data in &track_data.clips {
-            // Resolve relative paths relative to the project file directory
-            let audio_path = if clip_data.audio_path.is_relative() {
-                project_dir.join(&clip_data.audio_path)
-            } else {
-                clip_data.audio_path.clone()
-            };
-
-            let audio_buffer =
-                daw_decode::decode_file(&audio_path).map_err(|e| ProjectError::AudioDecode {
+            let audio_buffer = daw_decode::decode_file(&clip_data.audio_path).map_err(|e| {
+                ProjectError::AudioDecode {
                     path: clip_data.audio_path.clone(),
                     source: e,
-                })?;
+                }
+            })?;
 
             audio_paths.insert(clip_data.id, clip_data.audio_path.clone());
 
@@ -85,10 +78,6 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
             clips,
             volume: track_data.volume,
         };
-        eprintln!(
-            "Loading track '{}' with volume: {}",
-            track.name, track.volume
-        );
         tracks.push(track);
     }
 

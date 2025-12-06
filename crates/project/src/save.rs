@@ -18,26 +18,20 @@ pub fn save_project(
         time_signature,
         tracks: tracks
             .iter()
-            .map(|track| {
-                eprintln!(
-                    "Saving track '{}' with volume: {}",
-                    track.name, track.volume
-                );
-                TrackData {
-                    id: track.id.0,
-                    name: track.name.clone(),
-                    clips: track
-                        .clips
-                        .iter()
-                        .map(|clip| ClipData {
-                            id: clip.id.0,
-                            name: clip.name.clone(),
-                            start: clip.start,
-                            audio_path: audio_paths.get(&clip.id.0).cloned().unwrap_or_default(),
-                        })
-                        .collect(),
-                    volume: track.volume,
-                }
+            .map(|track| TrackData {
+                id: track.id.0,
+                name: track.name.clone(),
+                clips: track
+                    .clips
+                    .iter()
+                    .map(|clip| ClipData {
+                        id: clip.id.0,
+                        name: clip.name.clone(),
+                        start: clip.start,
+                        audio_path: audio_paths.get(&clip.id.0).cloned().unwrap_or_default(),
+                    })
+                    .collect(),
+                volume: track.volume,
             })
             .collect(),
     };

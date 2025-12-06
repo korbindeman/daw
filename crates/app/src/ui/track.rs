@@ -75,7 +75,6 @@ impl Render for Track {
                 .on_mouse_down(
                     gpui::MouseButton::Left,
                     cx.listener(move |_track, _event, _window, cx| {
-                        println!("MOUSE DOWN DETECTED on clip {:?}!", clip_id);
                         cx.emit(TrackEvent::ClipClicked(clip_id.clone()));
                     }),
                 )

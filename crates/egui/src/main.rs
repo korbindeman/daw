@@ -1,6 +1,6 @@
 use daw_core::{
     AudioBuffer, Clip, ClipId, PPQN, Project, Session, TimeSignature, Track, TrackId, WaveformData,
-    decode_file,
+    decode_file, strip_samples_root,
 };
 use eframe::egui;
 use std::collections::HashMap;
@@ -118,7 +118,7 @@ impl SequencerApp {
         match decode_file(path) {
             Ok(buffer) => {
                 self.tracks[track_idx].audio = Some(Arc::new(buffer));
-                self.tracks[track_idx].sample_path = Some(path.clone());
+                self.tracks[track_idx].sample_path = Some(strip_samples_root(path));
                 self.tracks[track_idx].sample_name = path
                     .file_stem()
                     .map(|s| s.to_string_lossy().to_string())
@@ -364,10 +364,10 @@ impl SequencerApp {
                     for track in loaded_session.tracks() {
                         let mut track_state = SequencerTrackState::default();
                         track_state.pages.clear(); // Clear the default page
-                        track_state.volume = track_data.volume; // Load volume from project
+                        track_state.volume = track.volume; // Load volume from project
 
                         // Group clips by page
-                        let max_page = track_data
+                        let max_page = track
                             .clips
                             .iter()
                             .map(|clip| (clip.start / ticks_per_bar) as usize)
@@ -380,13 +380,16 @@ impl SequencerApp {
                         }
 
                         for clip in &track.clips {
-                            let step_idx = (clip.start / ticks_per_step) as usize;
-                            if step_idx < NUM_STEPS {
-                                track_state.steps[step_idx] = true;
+                            let page_idx = (clip.start / ticks_per_bar) as usize;
+                            let step_idx = ((clip.start % ticks_per_bar) / ticks_per_step) as usize;
+                            if page_idx < track_state.pages.len() && step_idx < NUM_STEPS {
+                                track_state.pages[page_idx][step_idx] = true;
 
                                 // Get the audio path from the session's audio_paths map
                                 if track_state.sample_path.is_none() {
-                                    if let Some(audio_path) = loaded_session.audio_paths().get(&clip.id.0) {
+                                    if let Some(audio_path) =
+                                        loaded_session.audio_paths().get(&clip.id.0)
+                                    {
                                         track_state.sample_path = Some(audio_path.clone());
                                         track_state.sample_name = audio_path
                                             .file_stem()

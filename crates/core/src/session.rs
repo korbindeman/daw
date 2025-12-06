@@ -226,10 +226,6 @@ impl Session {
         self.tracks
             .iter()
             .map(|track| {
-                eprintln!(
-                    "Session sending track '{}' to engine with volume: {}",
-                    track.name, track.volume
-                );
                 EngineTrack {
                     clips: track
                         .clips

@@ -1,9 +1,11 @@
 mod app_menus;
+mod config;
 mod keybindings;
 mod theme;
 mod ui;
 
 use app_menus::{OpenProject, RenderProject, app_menus};
+use config::Config;
 use daw_core::{ClipId, Session};
 use gpui::{
     App, Application, Context, Entity, FocusHandle, Timer, Window, WindowOptions, actions, div,
@@ -23,6 +25,7 @@ struct Daw {
     project_path: PathBuf,
     selected_clips: Vec<ClipId>,
     last_tick: Option<u64>,
+    config: Config,
 }
 
 impl Daw {
@@ -67,6 +70,7 @@ impl Daw {
             project_path: path.to_path_buf(),
             selected_clips: Vec::new(),
             last_tick: None,
+            config: Config::load(),
         }
     }
 
@@ -114,11 +118,8 @@ impl Daw {
     }
 
     fn toggle_clip_selection(&mut self, clip_id: ClipId, cx: &mut Context<Self>) {
-        // For now, just single selection - clear and select the clicked clip
-        println!("Clip clicked! ClipId: {:?}", clip_id);
         self.selected_clips.clear();
         self.selected_clips.push(clip_id.clone());
-        println!("Selected clips: {:?}", self.selected_clips);
         cx.notify();
     }
 
@@ -210,19 +211,29 @@ impl Render for Daw {
                     }
                 });
             }))
-            .on_action(cx.listener(|_this, _: &OpenProject, _, cx| {
+            .on_action(cx.listener(|this, _: &OpenProject, _, cx| {
+                let start_dir = this.config.picker_directories.get("open_project").cloned();
                 cx.spawn(
                     async |this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
-                        let file = rfd::AsyncFileDialog::new()
+                        let mut dialog = rfd::AsyncFileDialog::new()
                             .add_filter("DAW Project", &["dawproj"])
-                            .set_title("Open Project")
-                            .pick_file()
-                            .await;
+                            .set_title("Open Project");
+                        if let Some(dir) = start_dir {
+                            dialog = dialog.set_directory(&dir);
+                        }
+                        let file = dialog.pick_file().await;
 
                         if let Some(file) = file {
                             let path = file.path().to_path_buf();
                             let _ = cx.update(|cx| {
                                 this.update(cx, |daw, cx| {
+                                    if let Some(parent) = path.parent() {
+                                        daw.config.picker_directories.insert(
+                                            "open_project".to_string(),
+                                            parent.to_path_buf(),
+                                        );
+                                        daw.config.save();
+                                    }
                                     daw.load_project(path, cx);
                                 })
                             });
@@ -235,18 +246,37 @@ impl Render for Daw {
                 let session = &this.session;
                 let tempo = session.tempo();
                 let tracks = session.tracks().to_vec();
+                let start_dir = this.config.picker_directories.get("render").cloned();
+                let default_name = this
+                    .project_path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| format!("{}.wav", s))
+                    .unwrap_or_else(|| "render.wav".to_string());
 
                 cx.spawn(
-                    async move |_this: gpui::WeakEntity<Self>, _cx: &mut gpui::AsyncApp| {
-                        let file = rfd::AsyncFileDialog::new()
+                    async move |this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
+                        let mut dialog = rfd::AsyncFileDialog::new()
                             .add_filter("WAV Audio", &["wav"])
                             .set_title("Render to WAV")
-                            .set_file_name("render.wav")
-                            .save_file()
-                            .await;
+                            .set_file_name(&default_name);
+                        if let Some(dir) = start_dir {
+                            dialog = dialog.set_directory(&dir);
+                        }
+                        let file = dialog.save_file().await;
 
                         if let Some(file) = file {
                             let path = file.path().to_path_buf();
+                            let _ = cx.update(|cx| {
+                                this.update(cx, |daw, _cx| {
+                                    if let Some(parent) = path.parent() {
+                                        daw.config
+                                            .picker_directories
+                                            .insert("render".to_string(), parent.to_path_buf());
+                                        daw.config.save();
+                                    }
+                                })
+                            });
                             let buffer = daw_core::render_timeline(&tracks, tempo, 44100, 2);
                             if let Err(e) = daw_core::write_wav(&buffer, &path) {
                                 eprintln!("Failed to render: {}", e);
@@ -267,7 +297,7 @@ impl Render for Daw {
                             .flex_1()
                             .relative()
                             .bg(theme.elevated)
-                            .overflow_hidden()
+                            // .overflow_hidden()
                             .child(
                                 div()
                                     .absolute()
@@ -304,10 +334,6 @@ impl Render for Daw {
                                                 cx.subscribe(
                                                     &track_entity,
                                                     |this, _track, event: &TrackEvent, cx| {
-                                                        println!(
-                                                            "Track event received: {:?}",
-                                                            event
-                                                        );
                                                         match event {
                                                             TrackEvent::ClipClicked(clip_id) => {
                                                                 this.toggle_clip_selection(
