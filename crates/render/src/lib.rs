@@ -42,14 +42,23 @@ pub fn render_timeline(
     let total_samples = ticks_to_samples(end_tick as f64, tempo, sample_rate) as usize;
     let output_channels = channels as usize;
 
-    // Pre-resample all clips to output sample rate (skip disabled tracks)
-    let mut resampled_tracks = Vec::new();
+    // Pre-convert all clips to sample space and resample to output sample rate
+    struct RenderClip {
+        start_sample: u64,
+        end_sample: u64,
+        audio: Arc<AudioBuffer>,
+    }
+
+    let mut render_tracks: Vec<(f32, Vec<RenderClip>)> = Vec::new();
+
     for track in tracks {
         if !track.enabled {
             continue;
         }
-        let mut resampled_clips = Vec::new();
+
+        let mut render_clips = Vec::new();
         for clip in &track.clips {
+            // Resample if needed
             let resampled_audio = if clip.audio.sample_rate != sample_rate {
                 match resample_audio(&clip.audio, sample_rate) {
                     Ok(audio) => Arc::new(audio),
@@ -58,39 +67,41 @@ pub fn render_timeline(
             } else {
                 clip.audio.clone()
             };
-            resampled_clips.push((clip.start, resampled_audio));
+
+            // Convert tick position to sample position
+            let start_sample = ticks_to_samples(clip.start as f64, tempo, sample_rate) as u64;
+            let clip_channels = resampled_audio.channels as usize;
+            let clip_total_frames = resampled_audio.samples.len() / clip_channels;
+            let end_sample = start_sample + clip_total_frames as u64;
+
+            render_clips.push(RenderClip {
+                start_sample,
+                end_sample,
+                audio: resampled_audio,
+            });
         }
-        resampled_tracks.push((track.volume, resampled_clips));
+        render_tracks.push((track.volume, render_clips));
     }
 
+    // Render in sample space (like the engine does)
     let mut samples = vec![0.0f32; total_samples * output_channels];
-    let ticks_per_sample = samples_to_ticks(1.0, tempo, sample_rate);
 
     for frame_idx in 0..total_samples {
-        let position = frame_idx as f64 * ticks_per_sample;
+        let position = frame_idx as u64;
 
-        for (track_volume, resampled_clips) in &resampled_tracks {
-            for (clip_start, resampled_audio) in resampled_clips {
-                let clip_start_tick = *clip_start as f64;
-                let clip_channels = resampled_audio.channels as usize;
-                let clip_total_frames = resampled_audio.samples.len() / clip_channels;
-                let clip_length_ticks =
-                    samples_to_ticks(clip_total_frames as f64, tempo, sample_rate);
-                let clip_end_tick = clip_start_tick + clip_length_ticks;
-
-                if position >= clip_start_tick && position < clip_end_tick {
-                    let tick_offset = position - clip_start_tick;
-                    let sample_offset = ticks_to_samples(tick_offset, tempo, sample_rate);
+        for (track_volume, render_clips) in &render_tracks {
+            for clip in render_clips {
+                if position >= clip.start_sample && position < clip.end_sample {
+                    let sample_offset = position - clip.start_sample;
                     let source_frame_idx = sample_offset as usize;
+                    let clip_channels = clip.audio.channels as usize;
 
-                    if source_frame_idx < clip_total_frames {
-                        for ch in 0..output_channels {
-                            let clip_ch = ch % clip_channels;
-                            let src_idx = source_frame_idx * clip_channels + clip_ch;
-                            let dst_idx = frame_idx * output_channels + ch;
-                            if src_idx < resampled_audio.samples.len() {
-                                samples[dst_idx] += resampled_audio.samples[src_idx] * track_volume;
-                            }
+                    for ch in 0..output_channels {
+                        let clip_ch = ch % clip_channels;
+                        let src_idx = source_frame_idx * clip_channels + clip_ch;
+                        let dst_idx = frame_idx * output_channels + ch;
+                        if src_idx < clip.audio.samples.len() {
+                            samples[dst_idx] += clip.audio.samples[src_idx] * track_volume;
                         }
                     }
                 }
