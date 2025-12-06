@@ -1,7 +1,7 @@
 pub mod session;
 pub mod time;
 
-pub use session::{PlaybackState, Session};
+pub use session::{Metronome, PlaybackState, Session};
 pub use time::{MusicalPosition, TimeContext, TimeSignature};
 
 pub use daw_decode::{decode_file, strip_samples_root};

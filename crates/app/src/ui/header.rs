@@ -6,6 +6,7 @@ use gpui::{Context, Entity, EventEmitter, FocusHandle, Focusable, Window, div, p
 pub struct Header {
     current_tick: u64,
     pub playing: bool,
+    pub metronome_enabled: bool,
     bpm: f64,
     time_sig_numerator: u32,
     time_sig_denominator: u32,
@@ -19,6 +20,7 @@ pub enum HeaderEvent {
     Play,
     Pause,
     Stop,
+    ToggleMetronome,
 }
 
 impl EventEmitter<HeaderEvent> for Header {}
@@ -60,6 +62,7 @@ impl Header {
         Self {
             current_tick: 0,
             playing: false,
+            metronome_enabled: false,
             bpm,
             time_sig_numerator,
             time_sig_denominator,
@@ -125,6 +128,11 @@ impl Header {
 
     pub fn set_playing(&mut self, playing: bool, cx: &mut Context<Self>) {
         self.playing = playing;
+        cx.notify();
+    }
+
+    pub fn set_metronome_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.metronome_enabled = enabled;
         cx.notify();
     }
 }
@@ -194,7 +202,31 @@ impl Render for Header {
                             .text_color(theme.text)
                             .child(self.bpm_input.clone()),
                     )
-                    .child(div().text_color(theme.text).child("BPM")),
+                    .child(div().text_color(theme.text).child("BPM"))
+                    .child(
+                        div()
+                            .id("metronome-button")
+                            .px_2()
+                            .py_1()
+                            .ml_2()
+                            .bg(if self.metronome_enabled {
+                                theme.element_active
+                            } else {
+                                theme.element
+                            })
+                            .border_1()
+                            .border_color(theme.border)
+                            .text_color(theme.text)
+                            .hover(|s| s.bg(theme.element_hover))
+                            .active(|s| s.bg(theme.element_active))
+                            .on_mouse_down(
+                                gpui::MouseButton::Left,
+                                cx.listener(|_, _, _, cx| {
+                                    cx.emit(HeaderEvent::ToggleMetronome);
+                                }),
+                            )
+                            .child(if self.metronome_enabled { "M" } else { "M" }),
+                    ),
             )
             .child(
                 div()

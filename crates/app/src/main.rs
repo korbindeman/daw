@@ -53,6 +53,7 @@ impl Daw {
                 HeaderEvent::Play => this.play(&header, cx),
                 HeaderEvent::Pause => this.pause(&header, cx),
                 HeaderEvent::Stop => this.stop(&header, cx),
+                HeaderEvent::ToggleMetronome => this.toggle_metronome(&header, cx),
             },
         )
         .detach();
@@ -179,6 +180,12 @@ impl Daw {
         self.session.stop();
         self.last_tick = None;
         header.update(cx, |header, cx| header.set_playing(false, cx));
+    }
+
+    fn toggle_metronome(&mut self, header: &Entity<Header>, cx: &mut Context<Self>) {
+        self.session.toggle_metronome();
+        let enabled = self.session.metronome_enabled();
+        header.update(cx, |header, cx| header.set_metronome_enabled(enabled, cx));
     }
 }
 

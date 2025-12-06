@@ -345,10 +345,17 @@ impl SequencerApp {
     fn load_project(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("DAW Project", &["dawproj"])
+            .set_directory("projects")
             .pick_file()
         {
             match Session::from_project(&path) {
                 Ok(loaded_session) => {
+                    // Stop and clear the old session
+                    if let Some(ref mut session) = self.session {
+                        session.stop();
+                    }
+                    self.session = None;
+
                     self.project_name = loaded_session.name().to_string();
                     self.tempo = loaded_session.tempo();
                     self.tempo_input = format!("{:.0}", loaded_session.tempo());
@@ -549,6 +556,22 @@ impl eframe::App for SequencerApp {
                     }
                 } else if ui.button("▶ Play").clicked() {
                     self.start_playback();
+                }
+
+                // Metronome toggle
+                let metronome_enabled = self
+                    .session
+                    .as_ref()
+                    .map_or(false, |s| s.metronome_enabled());
+                let metronome_label = if metronome_enabled {
+                    "🔔 Metro"
+                } else {
+                    "🔕 Metro"
+                };
+                if ui.button(metronome_label).clicked() {
+                    if let Some(ref mut session) = self.session {
+                        session.toggle_metronome();
+                    }
                 }
 
                 if ui.button("+ Add Track").clicked() {

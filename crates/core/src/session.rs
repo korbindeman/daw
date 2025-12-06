@@ -6,11 +6,38 @@ use basedrop::Shared;
 use rayon::prelude::*;
 
 use crate::time::{TimeContext, TimeSignature};
-use daw_decode::strip_samples_root;
+use daw_decode::{decode_file_direct, strip_samples_root};
 use daw_engine::{AudioEngineHandle, EngineClip, EngineCommand, EngineStatus, EngineTrack};
 use daw_project::{load_project, save_project};
 use daw_render::{render_timeline, write_wav};
 use daw_transport::{AudioBuffer, PPQN, Track, resample_audio};
+
+/// Metronome samples and state
+pub struct Metronome {
+    /// Sample for beat 1 (downbeat)
+    pub hi: Arc<AudioBuffer>,
+    /// Sample for other beats
+    pub lo: Arc<AudioBuffer>,
+    /// Whether metronome is enabled
+    pub enabled: bool,
+    /// Volume (0.0 to 1.0)
+    pub volume: f32,
+}
+
+impl Metronome {
+    /// Load metronome samples from the assets directory
+    pub fn load() -> anyhow::Result<Self> {
+        let hi = decode_file_direct(Path::new("assets/metronome_hi.wav"))?;
+        let lo = decode_file_direct(Path::new("assets/metronome_lo.wav"))?;
+
+        Ok(Self {
+            hi: Arc::new(hi),
+            lo: Arc::new(lo),
+            enabled: false,
+            volume: 0.8,
+        })
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaybackState {
@@ -42,6 +69,8 @@ pub struct Session {
     project_path: Option<PathBuf>,
     /// Project name
     name: String,
+    /// Metronome state and samples
+    metronome: Metronome,
 }
 
 impl Session {
@@ -61,6 +90,9 @@ impl Session {
     ) -> anyhow::Result<Self> {
         let time_context = TimeContext::new(tempo, time_signature.into(), 100.0);
 
+        // Load metronome samples
+        let metronome = Metronome::load()?;
+
         // Convert tracks to engine format (ticks -> samples)
         // Use a placeholder sample rate; we'll get the real one after engine starts
         let engine = daw_engine::start(vec![])?;
@@ -76,6 +108,7 @@ impl Session {
             audio_paths,
             project_path: None,
             name: "Untitled".to_string(),
+            metronome,
         };
 
         // Now send the real tracks with correct sample rate conversion
@@ -175,9 +208,84 @@ impl Session {
     }
 
     fn send_tracks_to_engine(&mut self, sample_rate: u32) {
-        let engine_tracks = self.convert_tracks_for_engine(sample_rate);
+        let mut engine_tracks = self.convert_tracks_for_engine(sample_rate);
+
+        // Add metronome track if enabled
+        if self.metronome.enabled {
+            if let Some(metronome_track) = self.generate_metronome_track(sample_rate) {
+                engine_tracks.push(metronome_track);
+            }
+        }
+
         let shared_tracks = Shared::new(&self.engine.handle, engine_tracks);
         let _ = self.engine.tracks.push(shared_tracks);
+    }
+
+    /// Generate a metronome track with clicks on each beat
+    fn generate_metronome_track(&mut self, sample_rate: u32) -> Option<EngineTrack> {
+        // Ensure metronome samples are in the resample cache
+        for audio in [&self.metronome.hi, &self.metronome.lo] {
+            let key = (Arc::as_ptr(audio) as usize, sample_rate);
+            if !self.resample_cache.contains_key(&key) {
+                if audio.sample_rate == sample_rate {
+                    self.resample_cache.insert(key, audio.clone());
+                } else if let Ok(resampled) = resample_audio(audio, sample_rate) {
+                    self.resample_cache.insert(key, Arc::new(resampled));
+                }
+            }
+        }
+
+        let hi_key = (Arc::as_ptr(&self.metronome.hi) as usize, sample_rate);
+        let lo_key = (Arc::as_ptr(&self.metronome.lo) as usize, sample_rate);
+
+        let hi_audio = self.resample_cache.get(&hi_key)?.clone();
+        let lo_audio = self.resample_cache.get(&lo_key)?.clone();
+
+        // Calculate timeline length based on content
+        let max_tick = self.calculate_max_tick();
+        // Add some padding (4 bars worth)
+        let ticks_per_bar = self.time_context.time_signature.ticks_per_bar();
+        let end_tick = max_tick + ticks_per_bar * 4;
+
+        // Generate clicks for each beat
+        let beats_per_bar = self.time_context.time_signature.beats_per_bar();
+        let mut clips = Vec::new();
+        let mut current_tick = 0u64;
+        let mut beat_in_bar = 0u32;
+
+        while current_tick < end_tick {
+            let audio = if beat_in_bar == 0 {
+                hi_audio.clone()
+            } else {
+                lo_audio.clone()
+            };
+
+            clips.push(EngineClip {
+                start: self.ticks_to_samples_with_rate(current_tick, sample_rate),
+                audio,
+            });
+
+            current_tick += PPQN;
+            beat_in_bar = (beat_in_bar + 1) % beats_per_bar;
+        }
+
+        Some(EngineTrack {
+            clips,
+            volume: self.metronome.volume,
+        })
+    }
+
+    /// Calculate the maximum tick position across all clips
+    fn calculate_max_tick(&self) -> u64 {
+        let mut max_tick = 0u64;
+        for track in &self.tracks {
+            for clip in &track.clips {
+                let duration_ticks = clip.duration_ticks(self.tempo());
+                let end_tick = clip.start + duration_ticks;
+                max_tick = max_tick.max(end_tick);
+            }
+        }
+        max_tick
     }
 
     fn convert_tracks_for_engine(&mut self, sample_rate: u32) -> Vec<EngineTrack> {
@@ -345,5 +453,31 @@ impl Session {
 
     pub fn audio_paths_mut(&mut self) -> &mut HashMap<u64, PathBuf> {
         &mut self.audio_paths
+    }
+
+    // Metronome controls
+
+    pub fn metronome_enabled(&self) -> bool {
+        self.metronome.enabled
+    }
+
+    pub fn set_metronome_enabled(&mut self, enabled: bool) {
+        self.metronome.enabled = enabled;
+        self.send_tracks_to_engine(self.engine.sample_rate);
+    }
+
+    pub fn toggle_metronome(&mut self) {
+        self.set_metronome_enabled(!self.metronome.enabled);
+    }
+
+    pub fn metronome_volume(&self) -> f32 {
+        self.metronome.volume
+    }
+
+    pub fn set_metronome_volume(&mut self, volume: f32) {
+        self.metronome.volume = volume.clamp(0.0, 1.0);
+        if self.metronome.enabled {
+            self.send_tracks_to_engine(self.engine.sample_rate);
+        }
     }
 }
