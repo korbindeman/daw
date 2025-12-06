@@ -4,7 +4,7 @@ mod keybindings;
 mod theme;
 mod ui;
 
-use app_menus::{OpenProject, RenderProject, app_menus};
+use app_menus::{OpenProject, RenderProject, SaveProject, SaveProjectAs, app_menus};
 use config::Config;
 use daw_core::{ClipId, Session};
 use gpui::{
@@ -15,7 +15,10 @@ use keybindings::keybindings;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use theme::ActiveTheme;
-use ui::{Header, HeaderEvent, Playhead, Sidebar, TimelineRuler, Track, TrackEvent, TrackLabels, TrackLabelsEvent};
+use ui::{
+    Header, HeaderEvent, Playhead, Sidebar, TimelineRuler, Track, TrackEvent, TrackLabels,
+    TrackLabelsEvent,
+};
 
 struct Daw {
     session: Session,
@@ -64,15 +67,16 @@ impl Daw {
 
         let tracks = session.tracks().to_vec();
         let track_labels = cx.new(|_| TrackLabels::new(tracks));
-        cx.subscribe(&track_labels, |this, _entity, event: &TrackLabelsEvent, cx| {
-            match event {
+        cx.subscribe(
+            &track_labels,
+            |this, _entity, event: &TrackLabelsEvent, cx| match event {
                 TrackLabelsEvent::ToggleEnabled(track_id) => {
                     this.session.toggle_track_enabled(*track_id);
                     this.update_track_labels(cx);
                     cx.notify();
                 }
-            }
-        })
+            },
+        )
         .detach();
 
         let focus_handle = cx.focus_handle();
@@ -268,6 +272,54 @@ impl Render for Daw {
                                         daw.config.save();
                                     }
                                     daw.load_project(path, cx);
+                                })
+                            });
+                        }
+                    },
+                )
+                .detach();
+            }))
+            .on_action(cx.listener(|this, _: &SaveProject, _, _cx| {
+                if let Err(e) = this.session.save_in_place() {
+                    eprintln!("Failed to save project: {}", e);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &SaveProjectAs, _, cx| {
+                let start_dir = this.config.picker_directories.get("save_project").cloned();
+                let default_name = this
+                    .project_path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "untitled.dawproj".to_string());
+
+                cx.spawn(
+                    async move |this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
+                        let mut dialog = rfd::AsyncFileDialog::new()
+                            .add_filter("DAW Project", &["dawproj"])
+                            .set_title("Save Project As")
+                            .set_file_name(default_name);
+                        if let Some(dir) = start_dir {
+                            dialog = dialog.set_directory(&dir);
+                        }
+                        let file = dialog.save_file().await;
+
+                        if let Some(file) = file {
+                            let path = file.path().to_path_buf();
+                            let _ = cx.update(|cx| {
+                                this.update(cx, |daw, _cx| {
+                                    if let Some(parent) = path.parent() {
+                                        daw.config.picker_directories.insert(
+                                            "save_project".to_string(),
+                                            parent.to_path_buf(),
+                                        );
+                                        daw.config.save();
+                                    }
+                                    if let Err(e) = daw.session.save(&path) {
+                                        eprintln!("Failed to save project: {}", e);
+                                    } else {
+                                        daw.project_path = path;
+                                    }
                                 })
                             });
                         }
