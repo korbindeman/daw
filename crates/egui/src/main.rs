@@ -29,7 +29,8 @@ struct SequencerTrackState {
     sample_name: String,
     pages: Vec<[bool; NUM_STEPS]>, // Each page has 16 steps
     audio: Option<Arc<AudioBuffer>>,
-    volume: f32, // Linear gain multiplier (0.0 to 1.0)
+    volume: f32,          // Linear gain multiplier (0.0 to 1.0)
+    volume_input: String, // Text input for volume percentage
 }
 
 impl Default for SequencerTrackState {
@@ -40,6 +41,7 @@ impl Default for SequencerTrackState {
             pages: vec![[false; NUM_STEPS]], // Start with one empty page
             audio: None,
             volume: 1.0, // Unity gain by default
+            volume_input: "100".to_string(),
         }
     }
 }
@@ -237,27 +239,31 @@ impl SequencerApp {
 
     fn update_playback_position(&mut self) {
         if let Some(ref mut session) = self.session {
-            if let Some(ticks) = session.poll() {
-                let ticks_per_step = Self::ticks_per_step();
-                let ticks_per_bar = NUM_STEPS as u64 * ticks_per_step;
+            if session.is_playing() {
+                if let Some(ticks) = session.poll() {
+                    let ticks_per_step = Self::ticks_per_step();
+                    let ticks_per_bar = NUM_STEPS as u64 * ticks_per_step;
 
-                if self.loop_current_page {
-                    // Loop the current page only
-                    let wrapped_ticks = ticks % ticks_per_bar;
-                    self.playback_page = self.current_page;
-                    self.current_step = (wrapped_ticks / ticks_per_step) as usize;
-                } else {
-                    // Play through all pages sequentially
-                    let total_pages = self.tracks.iter().map(|t| t.pages.len()).max().unwrap_or(1);
-                    let total_ticks = ticks_per_bar * total_pages as u64;
-                    let wrapped_ticks = ticks % total_ticks;
+                    if self.loop_current_page {
+                        // Loop the current page only
+                        let wrapped_ticks = ticks % ticks_per_bar;
+                        self.playback_page = self.current_page;
+                        self.current_step = (wrapped_ticks / ticks_per_step) as usize;
+                    } else {
+                        // Play through all pages sequentially
+                        let total_pages =
+                            self.tracks.iter().map(|t| t.pages.len()).max().unwrap_or(1);
+                        let total_ticks = ticks_per_bar * total_pages as u64;
+                        let wrapped_ticks = ticks % total_ticks;
 
-                    let calculated_page = (wrapped_ticks / ticks_per_bar) as usize;
-                    self.playback_page = calculated_page.min(total_pages.saturating_sub(1));
-                    self.current_step = ((wrapped_ticks % ticks_per_bar) / ticks_per_step) as usize;
+                        let calculated_page = (wrapped_ticks / ticks_per_bar) as usize;
+                        self.playback_page = calculated_page.min(total_pages.saturating_sub(1));
+                        self.current_step =
+                            ((wrapped_ticks % ticks_per_bar) / ticks_per_step) as usize;
 
-                    // Auto-scroll to follow playback (clamp to valid range)
-                    self.current_page = self.playback_page.min(total_pages.saturating_sub(1));
+                        // Auto-scroll to follow playback (clamp to valid range)
+                        self.current_page = self.playback_page.min(total_pages.saturating_sub(1));
+                    }
                 }
             }
         }
@@ -374,6 +380,7 @@ impl SequencerApp {
                         let mut track_state = SequencerTrackState::default();
                         track_state.pages.clear(); // Clear the default page
                         track_state.volume = track.volume; // Load volume from project
+                        track_state.volume_input = format!("{:.0}", track.volume * 100.0);
 
                         // Group clips by page
                         let max_page = track
@@ -670,8 +677,26 @@ impl eframe::App for SequencerApp {
 
             ui.separator();
 
+            // Step markers - will be aligned with the grid below
+            const STEP_WIDTH: f32 = 24.0;
+            const STEP_HEIGHT: f32 = 40.0;
+
             ui.horizontal(|ui| {
-                ui.add_space(150.0);
+                // Create invisible spacer that matches the track row controls exactly
+                ui.horizontal(|ui| {
+                    ui.set_invisible();
+                    // Match sample selector
+                    egui::ComboBox::from_id_salt("_align_combo")
+                        .selected_text("")
+                        .width(130.0)
+                        .show_ui(ui, |_ui| {});
+                    // Match volume controls
+                    ui.label("Vol:");
+                    ui.add(egui::TextEdit::singleline(&mut String::new()).desired_width(40.0));
+                    ui.label("%");
+                });
+
+                // Now draw the step numbers
                 for i in 0..NUM_STEPS {
                     let label = format!("{}", i + 1);
                     let is_beat = i % self.time_signature.denominator as usize == 0;
@@ -688,7 +713,7 @@ impl eframe::App for SequencerApp {
                     };
 
                     let (rect, _) =
-                        ui.allocate_exact_size(egui::vec2(30.0, 20.0), egui::Sense::hover());
+                        ui.allocate_exact_size(egui::vec2(STEP_WIDTH, 20.0), egui::Sense::hover());
                     ui.painter().rect_filled(rect, 2.0, bg_color);
                     ui.painter().text(
                         rect.center(),
@@ -709,8 +734,15 @@ impl eframe::App for SequencerApp {
 
                 for (track_idx, track) in self.tracks.iter_mut().enumerate() {
                     ui.horizontal(|ui| {
+                        // Truncate long sample names for display
+                        let display_name = if track.sample_name.len() > 18 {
+                            format!("{}...", &track.sample_name[..15])
+                        } else {
+                            track.sample_name.clone()
+                        };
+
                         egui::ComboBox::from_id_salt(format!("sample_{}", track_idx))
-                            .selected_text(&track.sample_name)
+                            .selected_text(display_name)
                             .width(130.0)
                             .show_ui(ui, |ui| {
                                 for sample_path in &samples {
@@ -725,15 +757,18 @@ impl eframe::App for SequencerApp {
                                 }
                             });
 
-                        // Volume slider
+                        // Volume percentage input
+                        ui.label("Vol:");
                         let volume_response = ui.add(
-                            egui::Slider::new(&mut track.volume, 0.0..=1.0)
-                                .text("Vol")
-                                .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)),
+                            egui::TextEdit::singleline(&mut track.volume_input).desired_width(40.0),
                         );
                         if volume_response.changed() {
-                            tracks_modified = true;
+                            if let Ok(percentage) = track.volume_input.parse::<f32>() {
+                                track.volume = (percentage / 100.0).clamp(0.0, 1.0);
+                                tracks_modified = true;
+                            }
                         }
+                        ui.label("%");
 
                         // Ensure the current page exists for this track
                         while track.pages.len() <= self.current_page {
@@ -760,8 +795,10 @@ impl eframe::App for SequencerApp {
                                 egui::Color32::from_rgb(60, 60, 60)
                             };
 
-                            let response =
-                                ui.add_sized([30.0, 30.0], egui::Button::new("").fill(color));
+                            let response = ui.add_sized(
+                                [STEP_WIDTH, STEP_HEIGHT],
+                                egui::Button::new("").fill(color),
+                            );
                             if response.clicked() {
                                 *step = !*step;
                                 tracks_modified = true;

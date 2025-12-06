@@ -1,8 +1,8 @@
 use crate::theme::{ActiveTheme, to_dark_variant};
 use daw_core::{Clip, ClipId, PPQN, Track as TransportTrack, WaveformData};
 use gpui::{
-    Bounds, Context, CursorStyle, ElementId, EventEmitter, Hsla, Point, Size, Window, canvas, div,
-    fill, prelude::*, px,
+    Bounds, Context, CursorStyle, EventEmitter, Hsla, Point, Size, Window, canvas, div, fill,
+    prelude::*, px,
 };
 use std::sync::Arc;
 
@@ -86,14 +86,7 @@ impl Render for Track {
             .h(px(80.))
             .border_b_1()
             .border_color(theme.border)
-            .child(
-                div()
-                    .w_full()
-                    // .w(px(self.timeline_width as f32))
-                    .h_full()
-                    .relative()
-                    .children(clips),
-            )
+            .child(div().w_full().h_full().relative().children(clips))
     }
 }
 
