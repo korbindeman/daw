@@ -2,6 +2,8 @@ use crate::theme::ActiveTheme;
 use gpui::{Context, Window, div, prelude::*, px};
 use std::collections::BTreeMap;
 
+const SIDEBAR_WIDTH: f32 = 200.0;
+
 pub struct Sidebar {
     directories: BTreeMap<String, Vec<String>>,
 }
@@ -45,34 +47,39 @@ impl Render for Sidebar {
         let theme = cx.theme();
 
         div()
+            .id("sidebar")
+            .w(px(SIDEBAR_WIDTH))
             .h_full()
-            .w(px(200.))
+            .overflow_y_scroll()
             .bg(theme.surface)
             .border_r_1()
             .border_color(theme.border)
-            .flex()
-            .flex_col()
-            .gap_3()
-            .p_2()
-            .children(self.directories.iter().map(|(dir_name, samples)| {
+            .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .child(
+                    .gap_3()
+                    .p_2()
+                    .children(self.directories.iter().map(|(dir_name, samples)| {
                         div()
-                            .text_color(theme.text)
-                            .text_size(px(11.))
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .child(dir_name.clone()),
-                    )
-                    .children(samples.iter().map(|sample| {
-                        div()
-                            .text_color(theme.text)
-                            .text_size(px(10.))
-                            .pl_2()
-                            .child(sample.clone())
-                    }))
-            }))
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_color(theme.text)
+                                    .text_size(px(11.))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .child(dir_name.clone()),
+                            )
+                            .children(samples.iter().map(|sample| {
+                                div()
+                                    .text_color(theme.text)
+                                    .text_size(px(10.))
+                                    .pl_2()
+                                    .child(sample.clone())
+                            }))
+                    })),
+            )
     }
 }

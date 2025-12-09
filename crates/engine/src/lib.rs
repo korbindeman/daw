@@ -14,14 +14,18 @@ pub fn resample_clip(clip: EngineClip, target_sample_rate: u32) -> anyhow::Resul
     Ok(EngineClip {
         start: clip.start,
         audio: Arc::new(resampled_audio),
+        offset: clip.offset,
+        length: clip.length,
     })
 }
 
 /// Engine-side clip with sample-based position (converted from ticks by core)
 #[derive(Clone)]
 pub struct EngineClip {
-    pub start: u64, // sample position on timeline
+    pub start: u64,  // sample position on timeline
     pub audio: Arc<AudioBuffer>,
+    pub offset: u64, // offset into audio in samples (for trimmed clips)
+    pub length: Option<u64>, // length in samples (None = full audio length minus offset)
 }
 
 /// Engine-side track
@@ -152,13 +156,21 @@ where
                             let clip_channels = clip.audio.channels as usize;
                             let clip_total_frames = clip.audio.samples.len() / clip_channels;
 
-                            // clip.start and clip.audio are both in output sample rate (converted by core)
+                            // Calculate effective length (accounting for offset and explicit length)
+                            let available_frames = clip_total_frames.saturating_sub(clip.offset as usize);
+                            let effective_length = match clip.length {
+                                Some(len) => (len as usize).min(available_frames),
+                                None => available_frames,
+                            };
+
+                            // clip.start is the timeline position, effective_length is how long it plays
                             let clip_start = clip.start;
-                            let clip_end = clip_start + clip_total_frames as u64;
+                            let clip_end = clip_start + effective_length as u64;
 
                             if state.position >= clip_start && state.position < clip_end {
-                                let sample_offset = state.position - clip_start;
-                                let frame_index = sample_offset as usize;
+                                let timeline_offset = state.position - clip_start;
+                                // Add clip.offset to get the actual position in the audio buffer
+                                let frame_index = (clip.offset as usize) + (timeline_offset as usize);
 
                                 if frame_index < clip_total_frames {
                                     for (ch, mix_sample) in mixed.iter_mut().enumerate() {
@@ -316,6 +328,8 @@ mod tests {
         let clip = EngineClip {
             start: 0,
             audio: Arc::new(audio),
+            offset: 0,
+            length: None,
         };
 
         let resampled_clip = resample_clip(clip, 48000).expect("resample clip failed");

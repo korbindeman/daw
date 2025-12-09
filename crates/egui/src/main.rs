@@ -1,6 +1,6 @@
 use daw_core::{
-    AudioBuffer, Clip, ClipId, PPQN, Project, Session, TimeSignature, Track, TrackId, WaveformData,
-    decode_file, strip_samples_root,
+    AudioBuffer, PPQN, Project, Segment, Session, TimeSignature, Track, TrackId, WaveformData,
+    decode_file, samples_to_ticks, strip_samples_root,
 };
 use eframe::egui;
 use std::collections::HashMap;
@@ -147,8 +147,13 @@ impl SequencerApp {
             .filter_map(|(track_idx, track)| {
                 let audio = track.audio.as_ref()?;
 
-                let mut clips: Vec<Clip> = Vec::new();
-                let mut clip_num = 1;
+                let mut transport_track = Track::new(
+                    TrackId(track_idx as u64),
+                    track.sample_name.clone(),
+                );
+                transport_track.volume = track.volume;
+
+                let mut segment_num = 1;
 
                 if self.loop_current_page {
                     // Only use the current page
@@ -157,15 +162,23 @@ impl SequencerApp {
                         for (step_idx, &active) in page_steps.iter().enumerate() {
                             if active {
                                 let waveform = WaveformData::from_audio_buffer(audio, 512);
-                                let clip_id = (track_idx * NUM_STEPS + step_idx) as u64;
-                                clips.push(Clip {
-                                    id: ClipId(clip_id),
-                                    name: format!("{} {}", track.sample_name, clip_num),
-                                    start: (step_idx as u64) * ticks_per_step,
+                                let start_tick = (step_idx as u64) * ticks_per_step;
+                                // Use audio length in samples to calculate end tick
+                                let audio_frames = audio.samples.len() / audio.channels as usize;
+                                let audio_ticks = samples_to_ticks(
+                                    audio_frames as f64,
+                                    120.0, // default tempo for duration calculation
+                                    audio.sample_rate,
+                                );
+                                transport_track.insert_segment(Segment {
+                                    start_tick,
+                                    end_tick: start_tick + audio_ticks,
                                     audio: audio.clone(),
                                     waveform: Arc::new(waveform),
+                                    audio_offset: 0,
+                                    name: format!("{} {}", track.sample_name, segment_num),
                                 });
-                                clip_num += 1;
+                                segment_num += 1;
                             }
                         }
                     }
@@ -177,34 +190,33 @@ impl SequencerApp {
                         for (step_idx, &active) in page_steps.iter().enumerate() {
                             if active {
                                 let waveform = WaveformData::from_audio_buffer(audio, 512);
-                                let clip_id = (track_idx * NUM_STEPS * track.pages.len()
-                                    + page_idx * NUM_STEPS
-                                    + step_idx)
-                                    as u64;
-                                clips.push(Clip {
-                                    id: ClipId(clip_id),
-                                    name: format!("{} {}", track.sample_name, clip_num),
-                                    start: bar_offset + (step_idx as u64) * ticks_per_step,
+                                let start_tick = bar_offset + (step_idx as u64) * ticks_per_step;
+                                // Use audio length in samples to calculate end tick
+                                let audio_frames = audio.samples.len() / audio.channels as usize;
+                                let audio_ticks = samples_to_ticks(
+                                    audio_frames as f64,
+                                    120.0, // default tempo for duration calculation
+                                    audio.sample_rate,
+                                );
+                                transport_track.insert_segment(Segment {
+                                    start_tick,
+                                    end_tick: start_tick + audio_ticks,
                                     audio: audio.clone(),
                                     waveform: Arc::new(waveform),
+                                    audio_offset: 0,
+                                    name: format!("{} {}", track.sample_name, segment_num),
                                 });
-                                clip_num += 1;
+                                segment_num += 1;
                             }
                         }
                     }
                 }
 
-                if clips.is_empty() {
+                if transport_track.segments().is_empty() {
                     return None;
                 }
 
-                Some(Track {
-                    id: TrackId(track_idx as u64),
-                    name: track.sample_name.clone(),
-                    clips,
-                    volume: track.volume,
-                    enabled: true,
-                })
+                Some(transport_track)
             })
             .collect()
     }
@@ -273,7 +285,7 @@ impl SequencerApp {
         let ticks_per_step = Self::ticks_per_step();
         let ticks_per_bar = NUM_STEPS as u64 * ticks_per_step;
 
-        let mut audio_paths: HashMap<u64, PathBuf> = HashMap::new();
+        let mut audio_paths: HashMap<String, PathBuf> = HashMap::new();
         let transport_tracks: Vec<Track> = self
             .tracks
             .iter()
@@ -282,8 +294,13 @@ impl SequencerApp {
                 let audio = track.audio.as_ref()?;
                 let sample_path = track.sample_path.as_ref()?;
 
-                let mut clips: Vec<Clip> = Vec::new();
-                let mut clip_num = 1;
+                let mut transport_track = Track::new(
+                    TrackId(track_idx as u64),
+                    track.sample_name.clone(),
+                );
+                transport_track.volume = track.volume;
+
+                let mut segment_num = 1;
 
                 // Iterate through all pages
                 for (page_idx, page_steps) in track.pages.iter().enumerate() {
@@ -291,32 +308,33 @@ impl SequencerApp {
 
                     for (step_idx, &active) in page_steps.iter().enumerate() {
                         if active {
-                            let clip_id = (track_idx * NUM_STEPS * track.pages.len()
-                                + page_idx * NUM_STEPS
-                                + step_idx) as u64;
+                            let segment_name = format!("{} {}", track.sample_name, segment_num);
                             // Session::save() will strip the samples/ prefix
-                            audio_paths.insert(clip_id, sample_path.clone());
+                            audio_paths.insert(segment_name.clone(), sample_path.clone());
 
                             let waveform = WaveformData::from_audio_buffer(audio, 512);
-                            clips.push(Clip {
-                                id: ClipId(clip_id),
-                                name: format!("{} {}", track.sample_name, clip_num),
-                                start: bar_offset + (step_idx as u64) * ticks_per_step,
+                            let start_tick = bar_offset + (step_idx as u64) * ticks_per_step;
+                            // Use audio length in samples to calculate end tick
+                            let audio_frames = audio.samples.len() / audio.channels as usize;
+                            let audio_ticks = samples_to_ticks(
+                                audio_frames as f64,
+                                120.0,
+                                audio.sample_rate,
+                            );
+                            transport_track.insert_segment(Segment {
+                                start_tick,
+                                end_tick: start_tick + audio_ticks,
                                 audio: audio.clone(),
                                 waveform: Arc::new(waveform),
+                                audio_offset: 0,
+                                name: segment_name,
                             });
-                            clip_num += 1;
+                            segment_num += 1;
                         }
                     }
                 }
 
-                Some(Track {
-                    id: TrackId(track_idx as u64),
-                    name: track.sample_name.clone(),
-                    clips,
-                    volume: track.volume,
-                    enabled: true,
-                })
+                Some(transport_track)
             })
             .collect();
 
@@ -382,11 +400,11 @@ impl SequencerApp {
                         track_state.volume = track.volume; // Load volume from project
                         track_state.volume_input = format!("{:.0}", track.volume * 100.0);
 
-                        // Group clips by page
+                        // Group segments by page
                         let max_page = track
-                            .clips
+                            .segments()
                             .iter()
-                            .map(|clip| (clip.start / ticks_per_bar) as usize)
+                            .map(|segment| (segment.start_tick / ticks_per_bar) as usize)
                             .max()
                             .unwrap_or(0);
 
@@ -395,16 +413,17 @@ impl SequencerApp {
                             track_state.pages.push([false; NUM_STEPS]);
                         }
 
-                        for clip in &track.clips {
-                            let page_idx = (clip.start / ticks_per_bar) as usize;
-                            let step_idx = ((clip.start % ticks_per_bar) / ticks_per_step) as usize;
+                        for segment in track.segments() {
+                            let page_idx = (segment.start_tick / ticks_per_bar) as usize;
+                            let step_idx =
+                                ((segment.start_tick % ticks_per_bar) / ticks_per_step) as usize;
                             if page_idx < track_state.pages.len() && step_idx < NUM_STEPS {
                                 track_state.pages[page_idx][step_idx] = true;
 
                                 // Get the audio path from the session's audio_paths map
                                 if track_state.sample_path.is_none() {
                                     if let Some(audio_path) =
-                                        loaded_session.audio_paths().get(&clip.id.0)
+                                        loaded_session.audio_paths().get(&segment.name)
                                     {
                                         track_state.sample_path = Some(audio_path.clone());
                                         track_state.sample_name = audio_path
@@ -412,8 +431,8 @@ impl SequencerApp {
                                             .map(|s| s.to_string_lossy().to_string())
                                             .unwrap_or_else(|| "Unknown".to_string());
                                     }
-                                    // Use the already-decoded audio from the clip
-                                    track_state.audio = Some(clip.audio.clone());
+                                    // Use the already-decoded audio from the segment
+                                    track_state.audio = Some(segment.audio.clone());
                                 }
                             }
                         }
@@ -444,29 +463,33 @@ impl SequencerApp {
             .iter()
             .enumerate()
             .filter_map(|(track_idx, track)| {
-                if track.audio.is_none() {
-                    return None;
-                }
+                let audio = track.audio.as_ref()?;
 
-                let mut clips: Vec<daw_core::ClipData> = Vec::new();
-                let mut clip_num = 1;
+                let mut segments: Vec<daw_core::ClipData> = Vec::new();
+                let mut segment_num = 1;
 
                 for (page_idx, page_steps) in track.pages.iter().enumerate() {
                     let bar_offset = page_idx as u64 * ticks_per_bar;
 
                     for (step_idx, &active) in page_steps.iter().enumerate() {
                         if active {
-                            let clip_id = (track_idx * NUM_STEPS * track.pages.len()
-                                + page_idx * NUM_STEPS
-                                + step_idx) as u64;
+                            let start_tick = bar_offset + (step_idx as u64) * ticks_per_step;
+                            // Calculate end tick from audio duration
+                            let audio_frames = audio.samples.len() / audio.channels as usize;
+                            let audio_ticks = samples_to_ticks(
+                                audio_frames as f64,
+                                120.0,
+                                audio.sample_rate,
+                            );
 
-                            clips.push(daw_core::ClipData {
-                                id: clip_id,
-                                name: format!("{} {}", track.sample_name, clip_num),
-                                start: bar_offset + (step_idx as u64) * ticks_per_step,
+                            segments.push(daw_core::ClipData {
+                                name: format!("{} {}", track.sample_name, segment_num),
+                                start_tick,
+                                end_tick: start_tick + audio_ticks,
                                 audio_path: track.sample_path.clone().unwrap_or_default(),
+                                audio_offset: 0,
                             });
-                            clip_num += 1;
+                            segment_num += 1;
                         }
                     }
                 }
@@ -474,7 +497,7 @@ impl SequencerApp {
                 Some(daw_core::TrackData {
                     id: track_idx as u64,
                     name: track.sample_name.clone(),
-                    clips,
+                    segments,
                     volume: track.volume,
                     enabled: true,
                 })
@@ -620,8 +643,7 @@ impl eframe::App for SequencerApp {
                         if was_playing {
                             session.stop();
                         }
-                        *session.tracks_mut() = tracks;
-                        session.update_tracks();
+                        session.set_tracks(tracks);
 
                         if was_playing {
                             session.play();
@@ -668,8 +690,7 @@ impl eframe::App for SequencerApp {
                     if self.session.is_some() {
                         let tracks = self.build_transport_tracks();
                         if let Some(ref mut session) = self.session {
-                            *session.tracks_mut() = tracks;
-                            session.update_tracks();
+                            session.set_tracks(tracks);
                         }
                     }
                 }
@@ -815,8 +836,7 @@ impl eframe::App for SequencerApp {
                     if self.session.is_some() {
                         let tracks = self.build_transport_tracks();
                         if let Some(ref mut session) = self.session {
-                            *session.tracks_mut() = tracks;
-                            session.update_tracks();
+                            session.set_tracks(tracks);
                         }
                     }
                 }

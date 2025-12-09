@@ -14,19 +14,14 @@ fn samples_to_ticks(samples: f64, tempo: f64, sample_rate: u32) -> f64 {
     samples / (seconds_per_tick * sample_rate as f64)
 }
 
-fn calculate_end_tick(tracks: &[Track], tempo: f64) -> u64 {
+fn calculate_end_tick(tracks: &[Track]) -> u64 {
     let mut max_end_tick = 0u64;
     for track in tracks {
         if !track.enabled {
             continue;
         }
-        for clip in &track.clips {
-            let clip_channels = clip.audio.channels as usize;
-            let clip_total_frames = clip.audio.samples.len() / clip_channels;
-            let clip_length_ticks =
-                samples_to_ticks(clip_total_frames as f64, tempo, clip.audio.sample_rate) as u64;
-            let end_tick = clip.start + clip_length_ticks;
-            max_end_tick = max_end_tick.max(end_tick);
+        for segment in track.segments() {
+            max_end_tick = max_end_tick.max(segment.end_tick);
         }
     }
     max_end_tick
@@ -38,49 +33,49 @@ pub fn render_timeline(
     sample_rate: u32,
     channels: u16,
 ) -> AudioBuffer {
-    let end_tick = calculate_end_tick(tracks, tempo);
+    let end_tick = calculate_end_tick(tracks);
     let total_samples = ticks_to_samples(end_tick as f64, tempo, sample_rate) as usize;
     let output_channels = channels as usize;
 
-    // Pre-convert all clips to sample space and resample to output sample rate
-    struct RenderClip {
+    // Pre-convert all segments to sample space and resample to output sample rate
+    struct RenderSegment {
         start_sample: u64,
         end_sample: u64,
+        offset: u64, // offset into audio in samples
         audio: Arc<AudioBuffer>,
     }
 
-    let mut render_tracks: Vec<(f32, Vec<RenderClip>)> = Vec::new();
+    let mut render_tracks: Vec<(f32, Vec<RenderSegment>)> = Vec::new();
 
     for track in tracks {
         if !track.enabled {
             continue;
         }
 
-        let mut render_clips = Vec::new();
-        for clip in &track.clips {
+        let mut render_segments = Vec::new();
+        for segment in track.segments() {
             // Resample if needed
-            let resampled_audio = if clip.audio.sample_rate != sample_rate {
-                match resample_audio(&clip.audio, sample_rate) {
+            let resampled_audio = if segment.audio.sample_rate != sample_rate {
+                match resample_audio(&segment.audio, sample_rate) {
                     Ok(audio) => Arc::new(audio),
-                    Err(_) => continue, // Skip clip if resampling fails
+                    Err(_) => continue, // Skip segment if resampling fails
                 }
             } else {
-                clip.audio.clone()
+                segment.audio.clone()
             };
 
-            // Convert tick position to sample position
-            let start_sample = ticks_to_samples(clip.start as f64, tempo, sample_rate) as u64;
-            let clip_channels = resampled_audio.channels as usize;
-            let clip_total_frames = resampled_audio.samples.len() / clip_channels;
-            let end_sample = start_sample + clip_total_frames as u64;
+            // Convert tick positions to sample positions
+            let start_sample = ticks_to_samples(segment.start_tick as f64, tempo, sample_rate) as u64;
+            let end_sample = ticks_to_samples(segment.end_tick as f64, tempo, sample_rate) as u64;
 
-            render_clips.push(RenderClip {
+            render_segments.push(RenderSegment {
                 start_sample,
                 end_sample,
+                offset: segment.audio_offset,
                 audio: resampled_audio,
             });
         }
-        render_tracks.push((track.volume, render_clips));
+        render_tracks.push((track.volume, render_segments));
     }
 
     // Render in sample space (like the engine does)
@@ -89,19 +84,20 @@ pub fn render_timeline(
     for frame_idx in 0..total_samples {
         let position = frame_idx as u64;
 
-        for (track_volume, render_clips) in &render_tracks {
-            for clip in render_clips {
-                if position >= clip.start_sample && position < clip.end_sample {
-                    let sample_offset = position - clip.start_sample;
-                    let source_frame_idx = sample_offset as usize;
-                    let clip_channels = clip.audio.channels as usize;
+        for (track_volume, render_segments) in &render_tracks {
+            for segment in render_segments {
+                if position >= segment.start_sample && position < segment.end_sample {
+                    let timeline_offset = position - segment.start_sample;
+                    // Add segment.offset to get the actual position in the audio buffer
+                    let source_frame_idx = (segment.offset as usize) + (timeline_offset as usize);
+                    let segment_channels = segment.audio.channels as usize;
 
                     for ch in 0..output_channels {
-                        let clip_ch = ch % clip_channels;
-                        let src_idx = source_frame_idx * clip_channels + clip_ch;
+                        let segment_ch = ch % segment_channels;
+                        let src_idx = source_frame_idx * segment_channels + segment_ch;
                         let dst_idx = frame_idx * output_channels + ch;
-                        if src_idx < clip.audio.samples.len() {
-                            samples[dst_idx] += clip.audio.samples[src_idx] * track_volume;
+                        if src_idx < segment.audio.samples.len() {
+                            samples[dst_idx] += segment.audio.samples[src_idx] * track_volume;
                         }
                     }
                 }

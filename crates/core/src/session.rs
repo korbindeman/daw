@@ -10,7 +10,7 @@ use daw_decode::{decode_file_direct, strip_samples_root};
 use daw_engine::{AudioEngineHandle, EngineClip, EngineCommand, EngineStatus, EngineTrack};
 use daw_project::{load_project, save_project};
 use daw_render::{render_timeline, write_wav};
-use daw_transport::{AudioBuffer, PPQN, Track, resample_audio};
+use daw_transport::{AudioBuffer, PPQN, Segment, Track, TrackId, resample_audio};
 
 /// Metronome samples and state
 pub struct Metronome {
@@ -63,8 +63,8 @@ pub struct Session {
     playback_state: PlaybackState,
     /// Cache of resampled audio buffers, keyed by (original audio pointer, target sample rate)
     resample_cache: HashMap<ResampleCacheKey, Arc<AudioBuffer>>,
-    /// Mapping from clip ID to audio file path (relative to samples root)
-    audio_paths: HashMap<u64, PathBuf>,
+    /// Mapping from segment name to audio file path (relative to samples root)
+    audio_paths: HashMap<String, PathBuf>,
     /// Path to the project file (if loaded from or saved to a file)
     project_path: Option<PathBuf>,
     /// Project name
@@ -86,15 +86,14 @@ impl Session {
         tracks: Vec<Track>,
         tempo: f64,
         time_signature: impl Into<TimeSignature>,
-        audio_paths: HashMap<u64, PathBuf>,
+        audio_paths: HashMap<String, PathBuf>,
     ) -> anyhow::Result<Self> {
         let time_context = TimeContext::new(tempo, time_signature.into(), 100.0);
 
         // Load metronome samples
         let metronome = Metronome::load()?;
 
-        // Convert tracks to engine format (ticks -> samples)
-        // Use a placeholder sample rate; we'll get the real one after engine starts
+        // Start the audio engine
         let engine = daw_engine::start(vec![])?;
         let sample_rate = engine.sample_rate;
 
@@ -119,8 +118,12 @@ impl Session {
 
     pub fn from_project(path: &Path) -> anyhow::Result<Self> {
         let project = load_project(path)?;
-        let mut session =
-            Self::new_with_audio_paths(project.tracks, project.tempo, project.time_signature, project.audio_paths)?;
+        let mut session = Self::new_with_audio_paths(
+            project.tracks,
+            project.tempo,
+            project.time_signature,
+            project.audio_paths,
+        )?;
         session.project_path = Some(path.to_path_buf());
         session.name = project.name;
         Ok(session)
@@ -128,10 +131,10 @@ impl Session {
 
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
         // Strip samples root from all audio paths before saving
-        let stripped_paths: HashMap<u64, PathBuf> = self
+        let stripped_paths: HashMap<String, PathBuf> = self
             .audio_paths
             .iter()
-            .map(|(id, p)| (*id, strip_samples_root(p)))
+            .map(|(name, p)| (name.clone(), strip_samples_root(p)))
             .collect();
 
         save_project(
@@ -263,6 +266,8 @@ impl Session {
             clips.push(EngineClip {
                 start: self.ticks_to_samples_with_rate(current_tick, sample_rate),
                 audio,
+                offset: 0,
+                length: None,
             });
 
             current_tick += PPQN;
@@ -275,14 +280,12 @@ impl Session {
         })
     }
 
-    /// Calculate the maximum tick position across all clips
+    /// Calculate the maximum tick position across all segments
     fn calculate_max_tick(&self) -> u64 {
         let mut max_tick = 0u64;
         for track in &self.tracks {
-            for clip in &track.clips {
-                let duration_ticks = clip.duration_ticks(self.tempo());
-                let end_tick = clip.start + duration_ticks;
-                max_tick = max_tick.max(end_tick);
+            for segment in track.segments() {
+                max_tick = max_tick.max(segment.end_tick);
             }
         }
         max_tick
@@ -292,11 +295,11 @@ impl Session {
         // Collect unique audio buffers by pointer address (avoids needing Hash on AudioBuffer)
         let mut unique_audios: HashMap<usize, Arc<AudioBuffer>> = HashMap::new();
         for track in &self.tracks {
-            for clip in &track.clips {
-                let ptr = Arc::as_ptr(&clip.audio) as usize;
+            for segment in track.segments() {
+                let ptr = Arc::as_ptr(&segment.audio) as usize;
                 unique_audios
                     .entry(ptr)
-                    .or_insert_with(|| clip.audio.clone());
+                    .or_insert_with(|| segment.audio.clone());
             }
         }
 
@@ -334,22 +337,27 @@ impl Session {
         self.tracks
             .iter()
             .filter(|track| track.enabled)
-            .map(|track| {
-                EngineTrack {
-                    clips: track
-                        .clips
-                        .iter()
-                        .filter_map(|clip| {
-                            let key = (Arc::as_ptr(&clip.audio) as usize, sample_rate);
-                            let resampled_audio = self.resample_cache.get(&key)?;
-                            Some(EngineClip {
-                                start: self.ticks_to_samples_with_rate(clip.start, sample_rate),
-                                audio: resampled_audio.clone(),
-                            })
+            .map(|track| EngineTrack {
+                clips: track
+                    .segments()
+                    .iter()
+                    .filter_map(|segment| {
+                        let key = (Arc::as_ptr(&segment.audio) as usize, sample_rate);
+                        let resampled_audio = self.resample_cache.get(&key)?;
+                        // Convert duration from ticks to samples
+                        let length_samples = self.ticks_to_samples_with_rate(
+                            segment.duration_ticks(),
+                            sample_rate,
+                        );
+                        Some(EngineClip {
+                            start: self.ticks_to_samples_with_rate(segment.start_tick, sample_rate),
+                            audio: resampled_audio.clone(),
+                            offset: segment.audio_offset,
+                            length: Some(length_samples),
                         })
-                        .collect(),
-                    volume: track.volume,
-                }
+                    })
+                    .collect(),
+                volume: track.volume,
             })
             .collect()
     }
@@ -400,8 +408,20 @@ impl Session {
         &self.tracks
     }
 
-    pub fn tracks_mut(&mut self) -> &mut Vec<Track> {
-        &mut self.tracks
+    // Track management methods
+
+    /// Replace all tracks. Track's insert_segment handles overlap resolution internally.
+    pub fn set_tracks(&mut self, tracks: Vec<Track>) {
+        self.tracks = tracks;
+        self.send_tracks_to_engine(self.engine.sample_rate);
+    }
+
+    /// Add a segment to a track. Overlaps are resolved automatically by Track.
+    pub fn add_segment(&mut self, track_id: TrackId, segment: Segment) {
+        if let Some(track) = self.tracks.iter_mut().find(|t| t.id.0 == track_id.0) {
+            track.insert_segment(segment);
+            self.send_tracks_to_engine(self.engine.sample_rate);
+        }
     }
 
     pub fn sample_rate(&self) -> u32 {
@@ -409,18 +429,9 @@ impl Session {
     }
 
     pub fn calculate_timeline_width(&self) -> f64 {
-        let mut max_end_tick = 0u64;
-        for track in &self.tracks {
-            for clip in &track.clips {
-                let duration_ticks = clip.duration_ticks(self.tempo());
-                let end_tick = clip.start + duration_ticks;
-                max_end_tick = max_end_tick.max(end_tick);
-            }
-        }
-
+        let max_end_tick = self.calculate_max_tick();
         let end_with_padding = max_end_tick + (PPQN * 4);
         let content_width = self.time_context.ticks_to_pixels(end_with_padding);
-
         let min_width = 1200.0;
         content_width.max(min_width)
     }
@@ -448,11 +459,11 @@ impl Session {
         self.project_path = Some(path);
     }
 
-    pub fn audio_paths(&self) -> &HashMap<u64, PathBuf> {
+    pub fn audio_paths(&self) -> &HashMap<String, PathBuf> {
         &self.audio_paths
     }
 
-    pub fn audio_paths_mut(&mut self) -> &mut HashMap<u64, PathBuf> {
+    pub fn audio_paths_mut(&mut self) -> &mut HashMap<String, PathBuf> {
         &mut self.audio_paths
     }
 

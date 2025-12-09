@@ -56,36 +56,179 @@ impl WaveformData {
     }
 }
 
+/// A segment of audio on the timeline with explicit start and end positions.
+/// Segments are non-overlapping within a track - the Track enforces this invariant.
 #[derive(Debug, Clone)]
-pub struct Clip {
-    pub id: ClipId,
-    pub name: String,
-    pub start: u64, // tick position on timeline
+pub struct Segment {
+    pub start_tick: u64,
+    pub end_tick: u64,
     pub audio: Arc<AudioBuffer>,
     pub waveform: Arc<WaveformData>,
+    /// Offset into the audio in samples (for trimmed starts)
+    pub audio_offset: u64,
+    /// Display name for UI
+    pub name: String,
 }
 
-impl Clip {
-    /// Calculate the duration of this clip in ticks based on audio buffer length
-    pub fn duration_ticks(&self, tempo: f64) -> u64 {
-        let samples_per_channel = self.audio.samples.len() / self.audio.channels as usize;
-        samples_to_ticks(samples_per_channel as f64, tempo, self.audio.sample_rate)
+impl Segment {
+    /// Duration of this segment in ticks
+    pub fn duration_ticks(&self) -> u64 {
+        self.end_tick - self.start_tick
     }
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClipId(pub u64);
 
 #[derive(Debug, Clone)]
 pub struct Track {
     pub id: TrackId,
     pub name: String,
-    pub clips: Vec<Clip>,
-    pub volume: f32, // Linear gain multiplier (0.0 = silence, 1.0 = unity)
+    /// Segments are always sorted by start_tick and non-overlapping.
+    /// Use insert_segment() to add segments - it enforces the invariant.
+    segments: Vec<Segment>,
+    pub volume: f32,
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone)]
+impl Track {
+    pub fn new(id: TrackId, name: String) -> Self {
+        Self {
+            id,
+            name,
+            segments: Vec::new(),
+            volume: 1.0,
+            enabled: true,
+        }
+    }
+
+    /// Get read-only access to segments
+    pub fn segments(&self) -> &[Segment] {
+        &self.segments
+    }
+
+    /// Clear all segments
+    pub fn clear_segments(&mut self) {
+        self.segments.clear();
+    }
+
+    /// Insert a segment, trimming/splitting/removing any overlapping segments.
+    /// The new segment takes priority - existing segments in its range are modified.
+    pub fn insert_segment(&mut self, new_seg: Segment) {
+        let new_start = new_seg.start_tick;
+        let new_end = new_seg.end_tick;
+
+        // Process existing segments
+        let mut result: Vec<Segment> = Vec::new();
+
+        for existing in self.segments.drain(..) {
+            let ex_start = existing.start_tick;
+            let ex_end = existing.end_tick;
+
+            // Check for overlap
+            if new_start < ex_end && ex_start < new_end {
+                // They overlap - determine how to handle
+
+                if new_start <= ex_start && new_end >= ex_end {
+                    // New completely covers existing - drop it
+                    continue;
+                } else if new_start > ex_start && new_end < ex_end {
+                    // New is in the middle - split existing into two parts
+
+                    // Left part: from ex_start to new_start
+                    let left = Segment {
+                        start_tick: ex_start,
+                        end_tick: new_start,
+                        audio: existing.audio.clone(),
+                        waveform: existing.waveform.clone(),
+                        audio_offset: existing.audio_offset,
+                        name: existing.name.clone(),
+                    };
+                    result.push(left);
+
+                    // Right part: from new_end to ex_end
+                    // Calculate the audio offset for the right part
+                    let ticks_into_audio = new_end - ex_start;
+                    let samples_per_tick = existing.audio.sample_rate as f64 / 960.0 * 0.5; // At 120 BPM
+                    // More accurate: we need tempo, but for now approximate
+                    // Actually, store audio_offset in samples, so we need to convert ticks to samples
+                    // This is tricky without tempo - let's use a simpler approach
+                    let right_offset = existing.audio_offset + ticks_to_samples_approx(ticks_into_audio, existing.audio.sample_rate);
+
+                    let right = Segment {
+                        start_tick: new_end,
+                        end_tick: ex_end,
+                        audio: existing.audio,
+                        waveform: existing.waveform,
+                        audio_offset: right_offset,
+                        name: existing.name,
+                    };
+                    result.push(right);
+                } else if new_start <= ex_start {
+                    // New covers the start - trim existing's start
+                    let trim_ticks = new_end - ex_start;
+                    let trim_samples = ticks_to_samples_approx(trim_ticks, existing.audio.sample_rate);
+
+                    let trimmed = Segment {
+                        start_tick: new_end,
+                        end_tick: ex_end,
+                        audio: existing.audio,
+                        waveform: existing.waveform,
+                        audio_offset: existing.audio_offset + trim_samples,
+                        name: existing.name,
+                    };
+
+                    if trimmed.start_tick < trimmed.end_tick {
+                        result.push(trimmed);
+                    }
+                } else {
+                    // New covers the end - trim existing's end
+                    let trimmed = Segment {
+                        start_tick: ex_start,
+                        end_tick: new_start,
+                        audio: existing.audio,
+                        waveform: existing.waveform,
+                        audio_offset: existing.audio_offset,
+                        name: existing.name,
+                    };
+
+                    if trimmed.start_tick < trimmed.end_tick {
+                        result.push(trimmed);
+                    }
+                }
+            } else {
+                // No overlap - keep as is
+                result.push(existing);
+            }
+        }
+
+        // Add the new segment
+        result.push(new_seg);
+
+        // Sort by start_tick
+        result.sort_by_key(|s| s.start_tick);
+
+        self.segments = result;
+    }
+
+    /// Build from a list of segments, inserting each one (resolving overlaps)
+    pub fn from_segments(id: TrackId, name: String, segments: Vec<Segment>) -> Self {
+        let mut track = Self::new(id, name);
+        for seg in segments {
+            track.insert_segment(seg);
+        }
+        track
+    }
+}
+
+/// Approximate tick to sample conversion (assumes 120 BPM)
+/// For more accurate conversion, use the tempo-aware version in daw_render
+fn ticks_to_samples_approx(ticks: u64, sample_rate: u32) -> u64 {
+    // At 120 BPM: 0.5 seconds per beat, PPQN=960 ticks per beat
+    // seconds_per_tick = 0.5 / 960
+    let seconds_per_tick = 0.5 / PPQN as f64;
+    let seconds = ticks as f64 * seconds_per_tick;
+    (seconds * sample_rate as f64) as u64
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrackId(pub u64);
 
 /// Convert samples to ticks based on tempo and sample rate

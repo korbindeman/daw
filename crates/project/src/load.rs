@@ -1,5 +1,5 @@
 use crate::{Project, ProjectError};
-use daw_transport::{Clip, ClipId, Track, TrackId, WaveformData};
+use daw_transport::{Segment, Track, TrackId, WaveformData};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -12,7 +12,8 @@ pub struct LoadedProject {
     pub tempo: f64,
     pub time_signature: (u32, u32),
     pub tracks: Vec<Track>,
-    pub audio_paths: HashMap<u64, std::path::PathBuf>,
+    /// Mapping from segment name to audio file path
+    pub audio_paths: HashMap<String, std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -21,7 +22,7 @@ pub struct ProjectMetadata {
     pub tempo: f64,
     pub time_signature: (u32, u32),
     pub track_count: usize,
-    pub clip_count: usize,
+    pub segment_count: usize,
 }
 
 fn load_project_data(path: &Path) -> Result<Project, ProjectError> {
@@ -39,14 +40,14 @@ fn load_project_data(path: &Path) -> Result<Project, ProjectError> {
 pub fn load_project_metadata(path: &Path) -> Result<ProjectMetadata, ProjectError> {
     let project = load_project_data(path)?;
 
-    let clip_count: usize = project.tracks.iter().map(|t| t.clips.len()).sum();
+    let segment_count: usize = project.tracks.iter().map(|t| t.segments.len()).sum();
 
     Ok(ProjectMetadata {
         name: project.name,
         tempo: project.tempo,
         time_signature: project.time_signature,
         track_count: project.tracks.len(),
-        clip_count,
+        segment_count,
     })
 }
 
@@ -57,36 +58,32 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
     let mut audio_paths = HashMap::new();
 
     for track_data in &project.tracks {
-        let mut clips = Vec::new();
+        let mut track = Track::new(TrackId(track_data.id), track_data.name.clone());
+        track.volume = track_data.volume;
+        track.enabled = track_data.enabled;
 
-        for clip_data in &track_data.clips {
-            let audio_buffer = daw_decode::decode_file(&clip_data.audio_path).map_err(|e| {
+        for segment_data in &track_data.segments {
+            let audio_buffer = daw_decode::decode_file(&segment_data.audio_path).map_err(|e| {
                 ProjectError::AudioDecode {
-                    path: clip_data.audio_path.clone(),
+                    path: segment_data.audio_path.clone(),
                     source: e,
                 }
             })?;
 
-            audio_paths.insert(clip_data.id, clip_data.audio_path.clone());
+            audio_paths.insert(segment_data.name.clone(), segment_data.audio_path.clone());
 
             let waveform = WaveformData::from_audio_buffer(&audio_buffer, 512);
 
-            clips.push(Clip {
-                id: ClipId(clip_data.id),
-                name: clip_data.name.clone(),
-                start: clip_data.start,
+            track.insert_segment(Segment {
+                start_tick: segment_data.start_tick,
+                end_tick: segment_data.end_tick,
                 audio: Arc::new(audio_buffer),
                 waveform: Arc::new(waveform),
+                audio_offset: segment_data.audio_offset,
+                name: segment_data.name.clone(),
             });
         }
 
-        let track = Track {
-            id: TrackId(track_data.id),
-            name: track_data.name.clone(),
-            clips,
-            volume: track_data.volume,
-            enabled: track_data.enabled,
-        };
         tracks.push(track);
     }
 
@@ -102,8 +99,8 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ClipData, Project, TrackData, save_project};
-    use daw_transport::{AudioBuffer, Clip, ClipId, Track, TrackId, WaveformData};
+    use crate::{Project, SegmentData, TrackData, save_project};
+    use daw_transport::{AudioBuffer, Segment, Track, TrackId, WaveformData};
     use std::collections::HashMap;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -163,22 +160,19 @@ mod tests {
         });
         let waveform = Arc::new(WaveformData::from_audio_buffer(&audio, 512));
 
-        let original_track = Track {
-            id: TrackId(1),
-            name: "Roundtrip Track".to_string(),
-            clips: vec![Clip {
-                id: ClipId(100),
-                name: "Test Clip".to_string(),
-                start: 960,
-                audio,
-                waveform,
-            }],
-            volume: 0.85,
-            enabled: true,
-        };
+        let mut original_track = Track::new(TrackId(1), "Roundtrip Track".to_string());
+        original_track.volume = 0.85;
+        original_track.insert_segment(Segment {
+            start_tick: 960,
+            end_tick: 1920,
+            audio,
+            waveform,
+            audio_offset: 0,
+            name: "Test Segment".to_string(),
+        });
 
         let mut audio_paths = HashMap::new();
-        audio_paths.insert(100, audio_path.clone());
+        audio_paths.insert("Test Segment".to_string(), audio_path.clone());
 
         save_project(
             &project_path,
@@ -197,9 +191,9 @@ mod tests {
         assert_eq!(loaded.time_signature, (4, 4));
         assert_eq!(loaded.tracks.len(), 1);
         assert_eq!(loaded.tracks[0].id.0, 1);
-        assert_eq!(loaded.tracks[0].clips.len(), 1);
-        assert_eq!(loaded.tracks[0].clips[0].id.0, 100);
-        assert_eq!(loaded.tracks[0].clips[0].start, 960);
+        assert_eq!(loaded.tracks[0].segments().len(), 1);
+        assert_eq!(loaded.tracks[0].segments()[0].start_tick, 960);
+        assert_eq!(loaded.tracks[0].segments()[0].end_tick, 1920);
     }
 
     #[test]
@@ -217,11 +211,12 @@ mod tests {
             tracks: vec![TrackData {
                 id: 1,
                 name: "Sample Track".to_string(),
-                clips: vec![ClipData {
-                    id: 100,
-                    start: 0,
+                segments: vec![SegmentData {
+                    start_tick: 0,
+                    end_tick: 960,
                     audio_path: audio_path.clone(),
-                    name: "Sample Clip".to_string(),
+                    audio_offset: 0,
+                    name: "Sample Segment".to_string(),
                 }],
                 volume: 1.0,
                 enabled: true,
@@ -234,8 +229,11 @@ mod tests {
 
         let loaded = load_project(&project_path).expect("load");
 
-        assert_eq!(loaded.tracks[0].clips[0].id.0, 100);
-        assert_eq!(loaded.audio_paths.get(&100).unwrap(), &audio_path);
+        assert_eq!(loaded.tracks[0].segments()[0].start_tick, 0);
+        assert_eq!(
+            loaded.audio_paths.get("Sample Segment").unwrap(),
+            &audio_path
+        );
     }
 
     #[test]
@@ -253,11 +251,12 @@ mod tests {
             tracks: vec![TrackData {
                 id: 1,
                 name: "Sample Track".to_string(),
-                clips: vec![ClipData {
-                    id: 100,
-                    start: 0,
+                segments: vec![SegmentData {
+                    start_tick: 0,
+                    end_tick: 960,
                     audio_path: audio_path.clone(),
-                    name: "Sample Clip".to_string(),
+                    audio_offset: 0,
+                    name: "Sample Segment".to_string(),
                 }],
                 volume: 1.0,
                 enabled: true,
@@ -272,7 +271,7 @@ mod tests {
         let loaded = load_project(&project_path).expect("load");
 
         assert_eq!(loaded.name, "Legacy MsgPack Test");
-        assert_eq!(loaded.tracks[0].clips[0].id.0, 100);
+        assert_eq!(loaded.tracks[0].segments()[0].start_tick, 0);
     }
 
     #[test]
@@ -287,11 +286,12 @@ mod tests {
             tracks: vec![TrackData {
                 id: 1,
                 name: "Missing Track".to_string(),
-                clips: vec![ClipData {
-                    id: 100,
-                    start: 0,
+                segments: vec![SegmentData {
+                    start_tick: 0,
+                    end_tick: 960,
                     audio_path: PathBuf::from("nonexistent.wav"),
-                    name: "Missing Clip".to_string(),
+                    audio_offset: 0,
+                    name: "Missing Segment".to_string(),
                 }],
                 volume: 1.0,
                 enabled: true,

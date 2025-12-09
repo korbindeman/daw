@@ -1,6 +1,8 @@
 use crate::theme::ActiveTheme;
 use gpui::{Context, Window, div, prelude::*, px};
 
+const RULER_HEIGHT: f32 = 20.0;
+
 pub struct TimelineRuler {
     pixels_per_beat: f64,
     time_signature: (u32, u32),
@@ -61,7 +63,7 @@ impl Render for TimelineRuler {
 
         div()
             .w(px(self.timeline_width as f32))
-            .h(px(20.))
+            .h(px(RULER_HEIGHT))
             .bg(theme.surface)
             .border_b_1()
             .border_color(theme.border)

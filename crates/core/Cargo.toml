@@ -12,3 +12,4 @@ daw_transport = { path = "../transport" }
 anyhow = "1.0"
 basedrop = "0.1"
 rayon = "1.10"
+thiserror = "1.0"

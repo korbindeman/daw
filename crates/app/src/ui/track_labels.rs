@@ -3,6 +3,10 @@ use gpui::{Context, EventEmitter, IntoElement, Render, Window, div, prelude::*, 
 
 use crate::theme::{ActiveTheme, to_dark_variant};
 
+const TRACK_LABEL_WIDTH: f32 = 150.0;
+const TRACK_HEIGHT: f32 = 80.0;
+const RULER_HEIGHT: f32 = 20.0;
+
 pub struct TrackLabels {
     tracks: Vec<Track>,
 }
@@ -31,12 +35,12 @@ impl Render for TrackLabels {
             .absolute()
             .right(px(0.))
             .top(px(0.))
-            .w(px(150.))
+            .w(px(TRACK_LABEL_WIDTH))
             .flex()
             .flex_col()
             .child(
                 div()
-                    .h(px(20.))
+                    .h(px(RULER_HEIGHT))
                     .bg(theme.elevated)
                     .border_b_1()
                     .border_l_1()
@@ -56,7 +60,7 @@ impl Render for TrackLabels {
                 };
 
                 div()
-                    .h(px(80.))
+                    .h(px(TRACK_HEIGHT))
                     .bg(bg_color)
                     .border_b_1()
                     .border_color(theme.border)
@@ -109,10 +113,10 @@ impl Render for TrackLabels {
                             .text_color(text_color.opacity(if enabled { 0.7 } else { 0.3 }))
                             .child(
                                 track
-                                    .clips
+                                    .segments()
                                     .first()
-                                    .map(|_| format!("{} clip(s)", track.clips.len()))
-                                    .unwrap_or_else(|| "No clips".to_string()),
+                                    .map(|_| format!("{} segment(s)", track.segments().len()))
+                                    .unwrap_or_else(|| "No segments".to_string()),
                             ),
                     )
             }))

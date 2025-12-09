@@ -19,18 +19,22 @@ pub struct Project {
 pub struct TrackData {
     pub id: u64,
     pub name: String,
-    pub clips: Vec<ClipData>,
-    pub volume: f32, // Linear gain multiplier (0.0 = silence, 1.0 = unity)
+    pub segments: Vec<SegmentData>,
+    pub volume: f32,
     pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClipData {
-    pub id: u64,
-    pub start: u64,
+pub struct SegmentData {
+    pub start_tick: u64,
+    pub end_tick: u64,
     pub audio_path: PathBuf,
+    pub audio_offset: u64,
     pub name: String,
 }
+
+// Keep ClipData as an alias for backwards compatibility with old project files
+pub type ClipData = SegmentData;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -64,17 +68,19 @@ mod tests {
                 TrackData {
                     id: 1,
                     name: "Drums".to_string(),
-                    clips: vec![
-                        ClipData {
-                            id: 100,
-                            start: 0,
+                    segments: vec![
+                        SegmentData {
+                            start_tick: 0,
+                            end_tick: 960,
                             audio_path: PathBuf::from("audio/kick.wav"),
+                            audio_offset: 0,
                             name: "Kick".to_string(),
                         },
-                        ClipData {
-                            id: 101,
-                            start: 960,
+                        SegmentData {
+                            start_tick: 960,
+                            end_tick: 1920,
                             audio_path: PathBuf::from("audio/snare.wav"),
+                            audio_offset: 0,
                             name: "Snare".to_string(),
                         },
                     ],
@@ -84,10 +90,11 @@ mod tests {
                 TrackData {
                     id: 2,
                     name: "Hi-Hats".to_string(),
-                    clips: vec![ClipData {
-                        id: 200,
-                        start: 480,
+                    segments: vec![SegmentData {
+                        start_tick: 480,
+                        end_tick: 960,
                         audio_path: PathBuf::from("audio/hihat.wav"),
+                        audio_offset: 0,
                         name: "Hi-Hat".to_string(),
                     }],
                     volume: 0.8,
@@ -115,10 +122,11 @@ mod tests {
         let track = TrackData {
             id: 42,
             name: "Test Track".to_string(),
-            clips: vec![ClipData {
-                id: 1,
-                start: 1920,
+            segments: vec![SegmentData {
+                start_tick: 1920,
+                end_tick: 2880,
                 audio_path: PathBuf::from("samples/test.wav"),
+                audio_offset: 0,
                 name: "Test".to_string(),
             }],
             volume: 0.75,
@@ -129,30 +137,30 @@ mod tests {
         let decoded: TrackData = serde_json::from_str(&json).expect("deserialize");
 
         assert_eq!(decoded.id, 42);
-        assert_eq!(decoded.clips.len(), 1);
-        assert_eq!(decoded.clips[0].id, 1);
-        assert_eq!(decoded.clips[0].start, 1920);
+        assert_eq!(decoded.segments.len(), 1);
+        assert_eq!(decoded.segments[0].start_tick, 1920);
         assert_eq!(
-            decoded.clips[0].audio_path,
+            decoded.segments[0].audio_path,
             PathBuf::from("samples/test.wav")
         );
     }
 
     #[test]
-    fn test_clip_data_serialization() {
-        let clip = ClipData {
-            id: 99,
-            start: 4800,
+    fn test_segment_data_serialization() {
+        let segment = SegmentData {
+            start_tick: 4800,
+            end_tick: 5760,
             audio_path: PathBuf::from("/absolute/path/to/audio.wav"),
+            audio_offset: 0,
             name: "Audio".to_string(),
         };
 
-        let json = serde_json::to_string(&clip).expect("serialize");
-        let decoded: ClipData = serde_json::from_str(&json).expect("deserialize");
+        let json = serde_json::to_string(&segment).expect("serialize");
+        let decoded: SegmentData = serde_json::from_str(&json).expect("deserialize");
 
-        assert_eq!(decoded.id, clip.id);
-        assert_eq!(decoded.start, clip.start);
-        assert_eq!(decoded.audio_path, clip.audio_path);
+        assert_eq!(decoded.start_tick, segment.start_tick);
+        assert_eq!(decoded.end_tick, segment.end_tick);
+        assert_eq!(decoded.audio_path, segment.audio_path);
     }
 
     #[test]
@@ -174,11 +182,11 @@ mod tests {
     }
 
     #[test]
-    fn test_track_with_no_clips() {
+    fn test_track_with_no_segments() {
         let track = TrackData {
             id: 5,
             name: "Empty Track".to_string(),
-            clips: vec![],
+            segments: vec![],
             volume: 1.0,
             enabled: true,
         };
@@ -187,7 +195,7 @@ mod tests {
         let decoded: TrackData = serde_json::from_str(&json).expect("deserialize");
 
         assert_eq!(decoded.id, 5);
-        assert!(decoded.clips.is_empty());
+        assert!(decoded.segments.is_empty());
     }
 
     #[test]

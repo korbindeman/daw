@@ -1,7 +1,12 @@
 use crate::theme::ActiveTheme;
-use crate::ui::primitives::Input;
+use crate::ui::primitives::{
+    Input,
+    button::{button, button_active},
+};
 use daw_core::PPQN;
 use gpui::{Context, Entity, EventEmitter, FocusHandle, Focusable, Window, div, prelude::*, px};
+
+const HEADER_HEIGHT: f32 = 50.0;
 
 pub struct Header {
     current_tick: u64,
@@ -145,14 +150,13 @@ impl Focusable for Header {
 
 impl Render for Header {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let theme = cx.theme().clone();
         let (bar, beat, division) =
             self.ticks_to_musical_time(self.current_tick, self.time_sig_numerator);
-        let time_seconds = self.format_seconds(self.current_tick, self.bpm);
 
         div()
             .w_full()
-            .h(px(50.))
+            .h(px(HEADER_HEIGHT))
             .bg(theme.header)
             .border_b_1()
             .border_color(theme.border)
@@ -176,6 +180,7 @@ impl Render for Header {
                             .child(
                                 div()
                                     .w(px(32.))
+                                    .h(px(28.))
                                     .bg(theme.background)
                                     .border_1()
                                     .border_color(theme.border)
@@ -186,6 +191,7 @@ impl Render for Header {
                             .child(
                                 div()
                                     .w(px(32.))
+                                    .h(px(28.))
                                     .bg(theme.background)
                                     .border_1()
                                     .border_color(theme.border)
@@ -196,6 +202,7 @@ impl Render for Header {
                     .child(
                         div()
                             .w(px(60.))
+                            .h(px(28.))
                             .bg(theme.background)
                             .border_1()
                             .border_color(theme.border)
@@ -204,28 +211,15 @@ impl Render for Header {
                     )
                     .child(div().text_color(theme.text).child("BPM"))
                     .child(
-                        div()
-                            .id("metronome-button")
-                            .px_2()
-                            .py_1()
+                        button_active("metronome-button", self.metronome_enabled, cx)
                             .ml_2()
-                            .bg(if self.metronome_enabled {
-                                theme.element_active
-                            } else {
-                                theme.element
-                            })
-                            .border_1()
-                            .border_color(theme.border)
-                            .text_color(theme.text)
-                            .hover(|s| s.bg(theme.element_hover))
-                            .active(|s| s.bg(theme.element_active))
                             .on_mouse_down(
                                 gpui::MouseButton::Left,
                                 cx.listener(|_, _, _, cx| {
                                     cx.emit(HeaderEvent::ToggleMetronome);
                                 }),
                             )
-                            .child(if self.metronome_enabled { "M" } else { "M" }),
+                            .child("M"),
                     ),
             )
             .child(
@@ -235,62 +229,39 @@ impl Render for Header {
                     .gap_4()
                     .child(
                         div()
+                            .h(px(28.))
+                            .px_1()
+                            .py(px(2.))
+                            .bg(theme.background)
+                            .border_1()
+                            .border_color(theme.border)
+                            .text_color(theme.text)
                             .flex()
-                            .flex_col()
                             .items_center()
                             .gap_1()
                             .child(
                                 div()
+                                    .w(px(24.))
                                     .flex()
-                                    .gap_1()
-                                    .child(
-                                        div()
-                                            .w(px(32.))
-                                            .h(px(20.))
-                                            .px_1()
-                                            .bg(theme.background)
-                                            .border_1()
-                                            .border_color(theme.border)
-                                            .text_color(theme.text)
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .child(format!("{}", bar)),
-                                    )
-                                    .child(
-                                        div()
-                                            .w(px(32.))
-                                            .h(px(20.))
-                                            .px_1()
-                                            .bg(theme.background)
-                                            .border_1()
-                                            .border_color(theme.border)
-                                            .text_color(theme.text)
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .child(format!("{}", beat)),
-                                    )
-                                    .child(
-                                        div()
-                                            .w(px(32.))
-                                            .h(px(20.))
-                                            .px_1()
-                                            .bg(theme.background)
-                                            .border_1()
-                                            .border_color(theme.border)
-                                            .text_color(theme.text)
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .child(format!("{}", division)),
-                                    ),
+                                    .items_center()
+                                    .justify_center()
+                                    .child(format!("{}.", bar)),
                             )
                             .child(
                                 div()
-                                    .text_color(theme.text)
-                                    .text_size(px(10.))
-                                    .child(time_seconds),
+                                    .w(px(24.))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(format!("{}.", beat)),
+                            )
+                            .child(
+                                div()
+                                    .w(px(24.))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(format!("{}", division)),
                             ),
                     )
                     .child(
@@ -298,16 +269,7 @@ impl Render for Header {
                             .flex()
                             .gap_2()
                             .child(
-                                div()
-                                    .id("play-pause-button")
-                                    .px_4()
-                                    .py_2()
-                                    .bg(theme.element)
-                                    .border_1()
-                                    .border_color(theme.border)
-                                    .text_color(theme.text)
-                                    .hover(|s| s.bg(theme.element_hover))
-                                    .active(|s| s.bg(theme.element_active))
+                                button("play-pause-button", cx)
                                     .on_mouse_down(
                                         gpui::MouseButton::Left,
                                         cx.listener(|this, _, _, cx| {
@@ -321,16 +283,7 @@ impl Render for Header {
                                     .child(if self.playing { "⏸" } else { "▶" }),
                             )
                             .child(
-                                div()
-                                    .id("stop-button")
-                                    .px_4()
-                                    .py_2()
-                                    .bg(theme.element)
-                                    .border_1()
-                                    .border_color(theme.border)
-                                    .text_color(theme.text)
-                                    .hover(|s| s.bg(theme.element_hover))
-                                    .active(|s| s.bg(theme.element_active))
+                                button("stop-button", cx)
                                     .on_mouse_down(
                                         gpui::MouseButton::Left,
                                         cx.listener(|_, _, _, cx| {

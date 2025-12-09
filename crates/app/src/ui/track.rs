@@ -1,14 +1,19 @@
 use crate::theme::{ActiveTheme, to_dark_variant};
-use daw_core::{Clip, ClipId, PPQN, Track as TransportTrack, WaveformData};
+use daw_core::{PPQN, Segment, Track as TransportTrack, WaveformData};
 use gpui::{
     Bounds, Context, CursorStyle, EventEmitter, Hsla, Point, Size, Window, canvas, div, fill,
     prelude::*, px,
 };
 use std::sync::Arc;
 
+const TRACK_HEIGHT: f32 = 80.0;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SegmentId(pub String);
+
 #[derive(Debug)]
 pub enum TrackEvent {
-    ClipClicked(ClipId),
+    SegmentClicked(SegmentId),
 }
 
 impl EventEmitter<TrackEvent> for Track {}
@@ -16,30 +21,27 @@ impl EventEmitter<TrackEvent> for Track {}
 pub struct Track {
     track: TransportTrack,
     pixels_per_beat: f64,
-    tempo: f64,
     timeline_width: f64,
-    selected_clips: Vec<ClipId>,
+    selected_segments: Vec<SegmentId>,
 }
 
 impl Track {
     pub fn new(
         track: TransportTrack,
         pixels_per_beat: f64,
-        tempo: f64,
+        _tempo: f64,
         timeline_width: f64,
     ) -> Self {
         Self {
             track,
             pixels_per_beat,
-            tempo,
             timeline_width,
-            selected_clips: Vec::new(),
+            selected_segments: Vec::new(),
         }
     }
 
-    pub fn selected_clips(mut self, selected_clips: Vec<ClipId>) -> Self {
-        self.selected_clips = selected_clips;
-        self
+    pub fn set_selected_segments(&mut self, selected_segments: Vec<SegmentId>) {
+        self.selected_segments = selected_segments;
     }
 }
 
@@ -51,21 +53,21 @@ impl Render for Track {
         // High contrast waveform: dark version of the track color (like #392838 vs #BE8CB9)
         let waveform_color = to_dark_variant(track_color);
 
-        let selected_clips = self.selected_clips.clone();
+        let selected_segments = self.selected_segments.clone();
 
-        let clips: Vec<_> = self
+        let segments: Vec<_> = self
             .track
-            .clips
+            .segments()
             .iter()
-            .map(|clip| {
-                let start_px = (clip.start as f64 / PPQN as f64) * self.pixels_per_beat;
-                let duration_ticks = clip.duration_ticks(self.tempo);
+            .map(|segment| {
+                let start_px = (segment.start_tick as f64 / PPQN as f64) * self.pixels_per_beat;
+                let duration_ticks = segment.duration_ticks();
                 let width_px = (duration_ticks as f64 / PPQN as f64) * self.pixels_per_beat;
-                let is_selected = selected_clips.contains(&clip.id);
-                let clip_id = clip.id.clone();
+                let segment_id = SegmentId(segment.name.clone());
+                let is_selected = selected_segments.contains(&segment_id);
 
-                render_clip(
-                    clip,
+                render_segment(
+                    segment,
                     start_px,
                     width_px,
                     track_color,
@@ -75,7 +77,7 @@ impl Render for Track {
                 .on_mouse_down(
                     gpui::MouseButton::Left,
                     cx.listener(move |_track, _event, _window, cx| {
-                        cx.emit(TrackEvent::ClipClicked(clip_id.clone()));
+                        cx.emit(TrackEvent::SegmentClicked(segment_id.clone()));
                     }),
                 )
             })
@@ -83,23 +85,23 @@ impl Render for Track {
 
         div()
             .w(px(self.timeline_width as f32))
-            .h(px(80.))
+            .h(px(TRACK_HEIGHT))
             .border_b_1()
             .border_color(theme.border)
-            .child(div().w_full().h_full().relative().children(clips))
+            .child(div().w_full().h_full().relative().children(segments))
     }
 }
 
-fn render_clip(
-    clip: &Clip,
+fn render_segment(
+    segment: &Segment,
     start_px: f64,
     width_px: f64,
     bg_color: Hsla,
     waveform_color: Hsla,
     is_selected: bool,
 ) -> gpui::Div {
-    let waveform = clip.waveform.clone();
-    let clip_name = clip.name.clone();
+    let waveform = segment.waveform.clone();
+    let segment_name = segment.name.clone();
 
     // When selected, flip the colors
     let (final_bg_color, final_waveform_color) = if is_selected {
@@ -134,7 +136,7 @@ fn render_clip(
                     div()
                         .text_xs()
                         .text_color(final_waveform_color)
-                        .child(clip_name),
+                        .child(segment_name),
                 ),
         )
         .child(

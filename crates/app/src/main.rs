@@ -6,7 +6,7 @@ mod ui;
 
 use app_menus::{OpenProject, RenderProject, SaveProject, SaveProjectAs, app_menus};
 use config::Config;
-use daw_core::{ClipId, Session};
+use daw_core::Session;
 use gpui::{
     App, Application, Context, Entity, FocusHandle, Timer, Window, WindowOptions, actions, div,
     prelude::*, px,
@@ -16,18 +16,22 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use theme::ActiveTheme;
 use ui::{
-    Header, HeaderEvent, Playhead, Sidebar, TimelineRuler, Track, TrackEvent, TrackLabels,
-    TrackLabelsEvent,
+    Header, HeaderEvent, Playhead, SegmentId, Sidebar, TimelineRuler, Track, TrackEvent,
+    TrackLabels, TrackLabelsEvent,
 };
+
+// UI Layout Constants
+const TRACK_LABEL_WIDTH: f32 = 150.0;
 
 struct Daw {
     session: Session,
     header_handle: Entity<Header>,
     playhead_handle: Entity<Playhead>,
     track_labels_handle: Entity<TrackLabels>,
+    track_entities: Vec<Entity<Track>>,
     focus_handle: FocusHandle,
     project_path: PathBuf,
-    selected_clips: Vec<ClipId>,
+    selected_segments: Vec<SegmentId>,
     last_tick: Option<u64>,
     config: Config,
 }
@@ -66,7 +70,7 @@ impl Daw {
         let playhead = cx.new(|_| Playhead::new(0, pixels_per_beat));
 
         let tracks = session.tracks().to_vec();
-        let track_labels = cx.new(|_| TrackLabels::new(tracks));
+        let track_labels = cx.new(|_| TrackLabels::new(tracks.clone()));
         cx.subscribe(
             &track_labels,
             |this, _entity, event: &TrackLabelsEvent, cx| match event {
@@ -79,6 +83,30 @@ impl Daw {
         )
         .detach();
 
+        // Create track entities
+        let timeline_width = session.calculate_timeline_width();
+        let track_entities: Vec<_> = tracks
+            .iter()
+            .map(|track| {
+                let track_entity =
+                    cx.new(|_| Track::new(track.clone(), pixels_per_beat, tempo, timeline_width));
+                track_entity
+            })
+            .collect();
+
+        // Subscribe to track events
+        for track_entity in &track_entities {
+            cx.subscribe(
+                track_entity,
+                |this, _track, event: &TrackEvent, cx| match event {
+                    TrackEvent::SegmentClicked(segment_id) => {
+                        this.toggle_segment_selection(segment_id.clone(), cx);
+                    }
+                },
+            )
+            .detach();
+        }
+
         let focus_handle = cx.focus_handle();
 
         Self {
@@ -86,9 +114,10 @@ impl Daw {
             header_handle: header,
             playhead_handle: playhead,
             track_labels_handle: track_labels,
+            track_entities,
             focus_handle,
             project_path: path.to_path_buf(),
-            selected_clips: Vec::new(),
+            selected_segments: Vec::new(),
             last_tick: None,
             config: Config::load(),
         }
@@ -110,7 +139,7 @@ impl Daw {
                 // Update session and project state
                 self.session = session;
                 self.project_path = path;
-                self.selected_clips.clear();
+                self.selected_segments.clear();
 
                 // Update header with new values
                 self.header_handle.update(cx, |header, cx| {
@@ -132,6 +161,9 @@ impl Daw {
                 // Update track labels with new tracks
                 self.update_track_labels(cx);
 
+                // Recreate track entities for new project
+                self.recreate_track_entities(cx);
+
                 cx.notify();
             }
             Err(e) => {
@@ -140,9 +172,10 @@ impl Daw {
         }
     }
 
-    fn toggle_clip_selection(&mut self, clip_id: ClipId, cx: &mut Context<Self>) {
-        self.selected_clips.clear();
-        self.selected_clips.push(clip_id.clone());
+    fn toggle_segment_selection(&mut self, segment_id: SegmentId, cx: &mut Context<Self>) {
+        self.selected_segments.clear();
+        self.selected_segments.push(segment_id.clone());
+        self.update_track_selected_segments(cx);
         cx.notify();
     }
 
@@ -152,6 +185,49 @@ impl Daw {
             track_labels.set_tracks(tracks);
             cx.notify();
         });
+    }
+
+    fn recreate_track_entities(&mut self, cx: &mut Context<Self>) {
+        let tracks = self.session.tracks().to_vec();
+        let pixels_per_beat = self.session.time_context().pixels_per_beat;
+        let tempo = self.session.tempo();
+        let timeline_width = self.session.calculate_timeline_width();
+
+        // Clear old track entities
+        self.track_entities.clear();
+
+        // Create new track entities
+        let track_entities: Vec<_> = tracks
+            .iter()
+            .map(|track| {
+                cx.new(|_| Track::new(track.clone(), pixels_per_beat, tempo, timeline_width))
+            })
+            .collect();
+
+        // Subscribe to track events
+        for track_entity in &track_entities {
+            cx.subscribe(
+                track_entity,
+                |this, _track, event: &TrackEvent, cx| match event {
+                    TrackEvent::SegmentClicked(segment_id) => {
+                        this.toggle_segment_selection(segment_id.clone(), cx);
+                    }
+                },
+            )
+            .detach();
+        }
+
+        self.track_entities = track_entities;
+    }
+
+    fn update_track_selected_segments(&mut self, cx: &mut Context<Self>) {
+        let selected_segments = self.selected_segments.clone();
+        for track_entity in &self.track_entities {
+            track_entity.update(cx, |track, cx| {
+                track.set_selected_segments(selected_segments.clone());
+                cx.notify();
+            });
+        }
     }
 
     fn poll_status(&mut self, cx: &mut Context<Self>) {
@@ -227,7 +303,6 @@ impl Render for Daw {
         let time_ctx = self.session.time_context();
         let pixels_per_beat = time_ctx.pixels_per_beat;
         let time_signature = time_ctx.time_signature;
-        let tracks = self.session.tracks();
 
         let header_handle = self.header_handle.clone();
 
@@ -376,7 +451,7 @@ impl Render for Daw {
                 div()
                     .flex()
                     .flex_1()
-                    .child(cx.new(|_| Sidebar::new()))
+                    // .child(cx.new(|_| Sidebar::new()))
                     .child(
                         div()
                             .flex_1()
@@ -388,7 +463,7 @@ impl Render for Daw {
                                     .absolute()
                                     .top_0()
                                     .left_0()
-                                    .right(px(150.))
+                                    .right(px(TRACK_LABEL_WIDTH))
                                     .bottom_0()
                                     .flex()
                                     .flex_col()
@@ -399,45 +474,19 @@ impl Render for Daw {
                                             timeline_width,
                                         )
                                     }))
-                                    .id("track_container")
-                                    .overflow_scroll()
-                                    .child({
-                                        let selected_clips = self.selected_clips.clone();
-                                        let tracks_and_playhead = div()
+                                    .child(
+                                        div()
+                                            .id("track_container")
                                             .flex_1()
-                                            .relative()
-                                            .children(tracks.iter().map(|track| {
-                                                let selected_clips = selected_clips.clone();
-                                                let track_entity = cx.new(|_| {
-                                                    Track::new(
-                                                        track.clone(),
-                                                        pixels_per_beat,
-                                                        self.session.tempo(),
-                                                        timeline_width,
-                                                    )
-                                                    .selected_clips(selected_clips)
-                                                });
-
-                                                cx.subscribe(
-                                                    &track_entity,
-                                                    |this, _track, event: &TrackEvent, cx| {
-                                                        match event {
-                                                            TrackEvent::ClipClicked(clip_id) => {
-                                                                this.toggle_clip_selection(
-                                                                    clip_id.clone(),
-                                                                    cx,
-                                                                );
-                                                            }
-                                                        }
-                                                    },
-                                                )
-                                                .detach();
-
-                                                track_entity
-                                            }));
-
-                                        tracks_and_playhead.child(self.playhead_handle.clone())
-                                    }),
+                                            .overflow_scroll()
+                                            .child(
+                                                div()
+                                                    .w(px(timeline_width as f32))
+                                                    .relative()
+                                                    .children(self.track_entities.iter().cloned())
+                                                    .child(self.playhead_handle.clone()),
+                                            ),
+                                    ),
                             )
                             .child(self.track_labels_handle.clone()),
                     ),
