@@ -1,6 +1,6 @@
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
-use daw_transport::{AudioBuffer, PPQN, Track, resample_audio};
+use daw_transport::{AudioArc, PPQN, Track};
 
 pub fn ticks_to_samples(ticks: f64, tempo: f64, sample_rate: u32) -> f64 {
     let seconds_per_beat = 60.0 / tempo;
@@ -27,12 +27,7 @@ fn calculate_end_tick(tracks: &[Track]) -> u64 {
     max_end_tick
 }
 
-pub fn render_timeline(
-    tracks: &[Track],
-    tempo: f64,
-    sample_rate: u32,
-    channels: u16,
-) -> AudioBuffer {
+pub fn render_timeline(tracks: &[Track], tempo: f64, sample_rate: u32, channels: u16) -> AudioArc {
     let end_tick = calculate_end_tick(tracks);
     let total_samples = ticks_to_samples(end_tick as f64, tempo, sample_rate) as usize;
     let output_channels = channels as usize;
@@ -42,7 +37,7 @@ pub fn render_timeline(
         start_sample: u64,
         end_sample: u64,
         offset: u64, // offset into audio in samples
-        audio: Arc<AudioBuffer>,
+        audio: AudioArc,
     }
 
     let mut render_tracks: Vec<(f32, Vec<RenderSegment>)> = Vec::new();
@@ -54,10 +49,10 @@ pub fn render_timeline(
 
         let mut render_segments = Vec::new();
         for segment in track.segments() {
-            // Resample if needed
-            let resampled_audio = if segment.audio.sample_rate != sample_rate {
-                match resample_audio(&segment.audio, sample_rate) {
-                    Ok(audio) => Arc::new(audio),
+            // Resample if needed (cheap clone if already at target rate)
+            let resampled_audio = if segment.audio.sample_rate() != sample_rate {
+                match segment.audio.resample(sample_rate) {
+                    Ok(audio) => audio,
                     Err(_) => continue, // Skip segment if resampling fails
                 }
             } else {
@@ -65,7 +60,8 @@ pub fn render_timeline(
             };
 
             // Convert tick positions to sample positions
-            let start_sample = ticks_to_samples(segment.start_tick as f64, tempo, sample_rate) as u64;
+            let start_sample =
+                ticks_to_samples(segment.start_tick as f64, tempo, sample_rate) as u64;
             let end_sample = ticks_to_samples(segment.end_tick as f64, tempo, sample_rate) as u64;
 
             render_segments.push(RenderSegment {
@@ -90,14 +86,14 @@ pub fn render_timeline(
                     let timeline_offset = position - segment.start_sample;
                     // Add segment.offset to get the actual position in the audio buffer
                     let source_frame_idx = (segment.offset as usize) + (timeline_offset as usize);
-                    let segment_channels = segment.audio.channels as usize;
+                    let segment_channels = segment.audio.channels() as usize;
 
                     for ch in 0..output_channels {
                         let segment_ch = ch % segment_channels;
                         let src_idx = source_frame_idx * segment_channels + segment_ch;
                         let dst_idx = frame_idx * output_channels + ch;
-                        if src_idx < segment.audio.samples.len() {
-                            samples[dst_idx] += segment.audio.samples[src_idx] * track_volume;
+                        if src_idx < segment.audio.samples().len() {
+                            samples[dst_idx] += segment.audio.samples()[src_idx] * track_volume;
                         }
                     }
                 }
@@ -105,24 +101,20 @@ pub fn render_timeline(
         }
     }
 
-    AudioBuffer {
-        samples,
-        sample_rate,
-        channels,
-    }
+    AudioArc::new(samples, sample_rate, channels)
 }
 
-pub fn write_wav(buffer: &AudioBuffer, path: &Path) -> anyhow::Result<()> {
+pub fn write_wav(buffer: &AudioArc, path: &Path) -> anyhow::Result<()> {
     let spec = hound::WavSpec {
-        channels: buffer.channels,
-        sample_rate: buffer.sample_rate,
+        channels: buffer.channels(),
+        sample_rate: buffer.sample_rate(),
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
     };
 
     let mut writer = hound::WavWriter::create(path, spec)?;
 
-    for &sample in &buffer.samples {
+    for &sample in buffer.samples() {
         writer.write_sample(sample)?;
     }
 

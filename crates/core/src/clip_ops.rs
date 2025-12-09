@@ -56,7 +56,7 @@ pub fn resolve_overlaps(
                 let right_offset_samples = ticks_to_samples_for_clip(
                     right_offset_ticks,
                     tempo,
-                    existing.audio.sample_rate,
+                    existing.audio.sample_rate(),
                 );
 
                 let mut right_clip = existing.clone();
@@ -69,11 +69,8 @@ pub fn resolve_overlaps(
             } else if new_start <= existing_start {
                 // Case 3: New clip covers the start of existing - trim existing's start
                 let trim_amount = new_end - existing_start;
-                let trim_samples = ticks_to_samples_for_clip(
-                    trim_amount,
-                    tempo,
-                    existing.audio.sample_rate,
-                );
+                let trim_samples =
+                    ticks_to_samples_for_clip(trim_amount, tempo, existing.audio.sample_rate());
 
                 let mut trimmed = existing.clone();
                 trimmed.start = new_end;
@@ -126,7 +123,7 @@ fn ticks_to_samples_for_clip(ticks: u64, tempo: f64, sample_rate: u32) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use daw_transport::{AudioBuffer, WaveformData};
+    use daw_transport::{AudioArc, WaveformData};
     use std::sync::Arc;
 
     /// Create a test clip with a specific start and duration in ticks
@@ -138,11 +135,11 @@ mod tests {
         let duration_seconds = duration_ticks as f64 * seconds_per_tick;
         let num_samples = (duration_seconds * sample_rate as f64) as usize;
 
-        let audio = Arc::new(AudioBuffer {
-            samples: vec![0.0; num_samples * 2], // stereo
+        let audio = AudioArc::new(
+            vec![0.0; num_samples * 2], // stereo
             sample_rate,
-            channels: 2,
-        });
+            2,
+        );
         let waveform = Arc::new(WaveformData {
             peaks: vec![],
             samples_per_bucket: 512,
@@ -202,8 +199,15 @@ mod tests {
 
         assert_eq!(result.clips.len(), 1);
         assert_eq!(result.clips[0].start, PPQN, "Clip should start at beat 2");
-        assert_eq!(result.clips[0].length, Some(PPQN), "Clip should be 1 beat long");
-        assert!(result.clips[0].offset > 0, "Offset should be set for trimmed start");
+        assert_eq!(
+            result.clips[0].length,
+            Some(PPQN),
+            "Clip should be 1 beat long"
+        );
+        assert!(
+            result.clips[0].offset > 0,
+            "Offset should be set for trimmed start"
+        );
     }
 
     #[test]
@@ -218,7 +222,11 @@ mod tests {
 
         assert_eq!(result.clips.len(), 1);
         assert_eq!(result.clips[0].start, 0, "Clip should still start at 0");
-        assert_eq!(result.clips[0].length, Some(PPQN), "Clip should be 1 beat long");
+        assert_eq!(
+            result.clips[0].length,
+            Some(PPQN),
+            "Clip should be 1 beat long"
+        );
         assert_eq!(result.clips[0].offset, 0, "Offset should remain 0");
     }
 
@@ -235,8 +243,16 @@ mod tests {
         assert_eq!(result.clips.len(), 2, "Should have 2 clips after split");
 
         // Find left and right parts
-        let left = result.clips.iter().find(|c| c.start == 0).expect("Should have left part");
-        let right = result.clips.iter().find(|c| c.start == PPQN * 2).expect("Should have right part");
+        let left = result
+            .clips
+            .iter()
+            .find(|c| c.start == 0)
+            .expect("Should have left part");
+        let right = result
+            .clips
+            .iter()
+            .find(|c| c.start == PPQN * 2)
+            .expect("Should have right part");
 
         assert_eq!(left.length, Some(PPQN), "Left part should be 1 beat");
         assert_eq!(left.offset, 0, "Left part offset should be 0");
@@ -266,12 +282,28 @@ mod tests {
 
         assert_eq!(result.clips.len(), 2, "Should have 2 clips remaining");
 
-        let first = result.clips.iter().find(|c| c.id.0 == 1).expect("Clip 1 should exist");
+        let first = result
+            .clips
+            .iter()
+            .find(|c| c.id.0 == 1)
+            .expect("Clip 1 should exist");
         assert_eq!(first.start, 0);
-        assert_eq!(first.length, Some(PPQN / 2), "First clip trimmed to half beat");
+        assert_eq!(
+            first.length,
+            Some(PPQN / 2),
+            "First clip trimmed to half beat"
+        );
 
-        let third = result.clips.iter().find(|c| c.id.0 == 3).expect("Clip 3 should exist");
-        assert_eq!(third.start, PPQN / 2 + PPQN * 2, "Third clip starts after new clip ends");
+        let third = result
+            .clips
+            .iter()
+            .find(|c| c.id.0 == 3)
+            .expect("Clip 3 should exist");
+        assert_eq!(
+            third.start,
+            PPQN / 2 + PPQN * 2,
+            "Third clip starts after new clip ends"
+        );
     }
 
     #[test]
@@ -297,6 +329,9 @@ mod tests {
 
         let result = resolve_overlaps(&existing, &new_clip, TEMPO, 100);
 
-        assert_eq!(result.next_clip_id, 101, "next_clip_id should be incremented");
+        assert_eq!(
+            result.next_clip_id, 101,
+            "next_clip_id should be incremented"
+        );
     }
 }

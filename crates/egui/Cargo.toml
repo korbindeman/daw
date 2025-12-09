@@ -5,6 +5,8 @@ edition.workspace = true
 
 [dependencies]
 daw_core = { path = "../core" }
+daw_decode = { path = "../decode" }
+daw_transport = { path = "../transport" }
 eframe = "0.33"
 rfd = "0.16"
 rmp-serde = "1.3"

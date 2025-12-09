@@ -63,21 +63,22 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
         track.enabled = track_data.enabled;
 
         for segment_data in &track_data.segments {
-            let audio_buffer = daw_decode::decode_file(&segment_data.audio_path).map_err(|e| {
-                ProjectError::AudioDecode {
-                    path: segment_data.audio_path.clone(),
-                    source: e,
-                }
-            })?;
+            let audio =
+                daw_decode::decode_audio_arc(&segment_data.audio_path, None).map_err(|e| {
+                    ProjectError::AudioDecode {
+                        path: segment_data.audio_path.clone(),
+                        source: e,
+                    }
+                })?;
 
             audio_paths.insert(segment_data.name.clone(), segment_data.audio_path.clone());
 
-            let waveform = WaveformData::from_audio_buffer(&audio_buffer, 512);
+            let waveform = WaveformData::from_audio_arc(&audio, 512);
 
             track.insert_segment(Segment {
                 start_tick: segment_data.start_tick,
                 end_tick: segment_data.end_tick,
-                audio: Arc::new(audio_buffer),
+                audio,
                 waveform: Arc::new(waveform),
                 audio_offset: segment_data.audio_offset,
                 name: segment_data.name.clone(),
@@ -100,7 +101,7 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
 mod tests {
     use super::*;
     use crate::{Project, SegmentData, TrackData, save_project};
-    use daw_transport::{AudioBuffer, Segment, Track, TrackId, WaveformData};
+    use daw_transport::{AudioArc, Segment, Track, TrackId, WaveformData};
     use std::collections::HashMap;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -153,12 +154,8 @@ mod tests {
 
         write_test_wav(&audio_path);
 
-        let audio = Arc::new(AudioBuffer {
-            samples: vec![0.0; 100],
-            sample_rate: 44100,
-            channels: 2,
-        });
-        let waveform = Arc::new(WaveformData::from_audio_buffer(&audio, 512));
+        let audio = AudioArc::new(vec![0.0; 100], 44100, 2);
+        let waveform = Arc::new(WaveformData::from_audio_arc(&audio, 512));
 
         let mut original_track = Track::new(TrackId(1), "Roundtrip Track".to_string());
         original_track.volume = 0.85;

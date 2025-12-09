@@ -1,7 +1,9 @@
 use daw_core::{
-    AudioBuffer, PPQN, Project, Segment, Session, TimeSignature, Track, TrackId, WaveformData,
-    decode_file, samples_to_ticks, strip_samples_root,
+    PPQN, Project, Segment, Session, TimeSignature, Track, TrackId, WaveformData, samples_to_ticks,
+    strip_samples_root,
 };
+use daw_decode::decode_audio_arc;
+use daw_transport::AudioArc;
 use eframe::egui;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -28,7 +30,7 @@ struct SequencerTrackState {
     sample_path: Option<PathBuf>,
     sample_name: String,
     pages: Vec<[bool; NUM_STEPS]>, // Each page has 16 steps
-    audio: Option<Arc<AudioBuffer>>,
+    audio: Option<AudioArc>,
     volume: f32,          // Linear gain multiplier (0.0 to 1.0)
     volume_input: String, // Text input for volume percentage
 }
@@ -117,9 +119,9 @@ impl SequencerApp {
     }
 
     fn load_sample(&mut self, track_idx: usize, path: &PathBuf) {
-        match decode_file(path) {
-            Ok(buffer) => {
-                self.tracks[track_idx].audio = Some(Arc::new(buffer));
+        match decode_audio_arc(path, None) {
+            Ok(audio) => {
+                self.tracks[track_idx].audio = Some(audio);
                 self.tracks[track_idx].sample_path = Some(strip_samples_root(path));
                 self.tracks[track_idx].sample_name = path
                     .file_stem()
@@ -147,10 +149,8 @@ impl SequencerApp {
             .filter_map(|(track_idx, track)| {
                 let audio = track.audio.as_ref()?;
 
-                let mut transport_track = Track::new(
-                    TrackId(track_idx as u64),
-                    track.sample_name.clone(),
-                );
+                let mut transport_track =
+                    Track::new(TrackId(track_idx as u64), track.sample_name.clone());
                 transport_track.volume = track.volume;
 
                 let mut segment_num = 1;
@@ -161,14 +161,15 @@ impl SequencerApp {
                         let page_steps = &track.pages[self.current_page];
                         for (step_idx, &active) in page_steps.iter().enumerate() {
                             if active {
-                                let waveform = WaveformData::from_audio_buffer(audio, 512);
+                                let waveform = WaveformData::from_audio_arc(audio, 512);
                                 let start_tick = (step_idx as u64) * ticks_per_step;
                                 // Use audio length in samples to calculate end tick
-                                let audio_frames = audio.samples.len() / audio.channels as usize;
+                                let audio_frames =
+                                    audio.samples().len() / audio.channels() as usize;
                                 let audio_ticks = samples_to_ticks(
                                     audio_frames as f64,
                                     120.0, // default tempo for duration calculation
-                                    audio.sample_rate,
+                                    audio.sample_rate(),
                                 );
                                 transport_track.insert_segment(Segment {
                                     start_tick,
@@ -189,14 +190,15 @@ impl SequencerApp {
 
                         for (step_idx, &active) in page_steps.iter().enumerate() {
                             if active {
-                                let waveform = WaveformData::from_audio_buffer(audio, 512);
+                                let waveform = WaveformData::from_audio_arc(audio, 512);
                                 let start_tick = bar_offset + (step_idx as u64) * ticks_per_step;
                                 // Use audio length in samples to calculate end tick
-                                let audio_frames = audio.samples.len() / audio.channels as usize;
+                                let audio_frames =
+                                    audio.samples().len() / audio.channels() as usize;
                                 let audio_ticks = samples_to_ticks(
                                     audio_frames as f64,
                                     120.0, // default tempo for duration calculation
-                                    audio.sample_rate,
+                                    audio.sample_rate(),
                                 );
                                 transport_track.insert_segment(Segment {
                                     start_tick,
@@ -294,10 +296,8 @@ impl SequencerApp {
                 let audio = track.audio.as_ref()?;
                 let sample_path = track.sample_path.as_ref()?;
 
-                let mut transport_track = Track::new(
-                    TrackId(track_idx as u64),
-                    track.sample_name.clone(),
-                );
+                let mut transport_track =
+                    Track::new(TrackId(track_idx as u64), track.sample_name.clone());
                 transport_track.volume = track.volume;
 
                 let mut segment_num = 1;
@@ -312,15 +312,12 @@ impl SequencerApp {
                             // Session::save() will strip the samples/ prefix
                             audio_paths.insert(segment_name.clone(), sample_path.clone());
 
-                            let waveform = WaveformData::from_audio_buffer(audio, 512);
+                            let waveform = WaveformData::from_audio_arc(audio, 512);
                             let start_tick = bar_offset + (step_idx as u64) * ticks_per_step;
                             // Use audio length in samples to calculate end tick
-                            let audio_frames = audio.samples.len() / audio.channels as usize;
-                            let audio_ticks = samples_to_ticks(
-                                audio_frames as f64,
-                                120.0,
-                                audio.sample_rate,
-                            );
+                            let audio_frames = audio.samples().len() / audio.channels() as usize;
+                            let audio_ticks =
+                                samples_to_ticks(audio_frames as f64, 120.0, audio.sample_rate());
                             transport_track.insert_segment(Segment {
                                 start_tick,
                                 end_tick: start_tick + audio_ticks,
@@ -475,12 +472,9 @@ impl SequencerApp {
                         if active {
                             let start_tick = bar_offset + (step_idx as u64) * ticks_per_step;
                             // Calculate end tick from audio duration
-                            let audio_frames = audio.samples.len() / audio.channels as usize;
-                            let audio_ticks = samples_to_ticks(
-                                audio_frames as f64,
-                                120.0,
-                                audio.sample_rate,
-                            );
+                            let audio_frames = audio.samples().len() / audio.channels() as usize;
+                            let audio_ticks =
+                                samples_to_ticks(audio_frames as f64, 120.0, audio.sample_rate());
 
                             segments.push(daw_core::ClipData {
                                 name: format!("{} {}", track.sample_name, segment_num),

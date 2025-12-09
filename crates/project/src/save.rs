@@ -48,19 +48,15 @@ pub fn save_project(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use daw_transport::{AudioBuffer, Segment, Track, TrackId, WaveformData};
+    use daw_transport::{AudioArc, Segment, Track, TrackId, WaveformData};
     use std::collections::HashMap;
     use std::path::PathBuf;
     use std::sync::Arc;
     use tempfile::tempdir;
 
     fn create_test_track() -> (Track, HashMap<String, std::path::PathBuf>) {
-        let audio = Arc::new(AudioBuffer {
-            samples: vec![0.0; 1000],
-            sample_rate: 44100,
-            channels: 2,
-        });
-        let waveform = Arc::new(WaveformData::from_audio_buffer(&audio, 512));
+        let audio = AudioArc::new(vec![0.0; 1000], 44100, 2);
+        let waveform = Arc::new(WaveformData::from_audio_arc(&audio, 512));
 
         let mut track = Track::new(TrackId(1), "Test Track".to_string());
         track.volume = 0.9;
@@ -163,12 +159,8 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("missing_path.dawproj");
 
-        let audio = Arc::new(AudioBuffer {
-            samples: vec![0.0; 100],
-            sample_rate: 44100,
-            channels: 2,
-        });
-        let waveform = Arc::new(WaveformData::from_audio_buffer(&audio, 512));
+        let audio = AudioArc::new(vec![0.0; 100], 44100, 2);
+        let waveform = Arc::new(WaveformData::from_audio_arc(&audio, 512));
 
         let mut track = Track::new(TrackId(1), "Missing Path Track".to_string());
         track.insert_segment(Segment {

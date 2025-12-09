@@ -1,30 +1,16 @@
-use std::sync::Arc;
-
 use basedrop::{Collector, Handle, Shared};
 use cpal::{
     FromSample, SizedSample,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
-use daw_transport::{AudioBuffer, resample_audio};
-
-/// Resample a clip's audio to the target sample rate
-/// Returns a new EngineClip with resampled audio
-pub fn resample_clip(clip: EngineClip, target_sample_rate: u32) -> anyhow::Result<EngineClip> {
-    let resampled_audio = resample_audio(&clip.audio, target_sample_rate)?;
-    Ok(EngineClip {
-        start: clip.start,
-        audio: Arc::new(resampled_audio),
-        offset: clip.offset,
-        length: clip.length,
-    })
-}
+use daw_transport::AudioArc;
 
 /// Engine-side clip with sample-based position (converted from ticks by core)
 #[derive(Clone)]
 pub struct EngineClip {
-    pub start: u64,  // sample position on timeline
-    pub audio: Arc<AudioBuffer>,
-    pub offset: u64, // offset into audio in samples (for trimmed clips)
+    pub start: u64, // sample position on timeline
+    pub audio: AudioArc,
+    pub offset: u64,         // offset into audio in samples (for trimmed clips)
     pub length: Option<u64>, // length in samples (None = full audio length minus offset)
 }
 
@@ -153,11 +139,12 @@ where
 
                     for track in current_tracks.iter() {
                         for clip in &track.clips {
-                            let clip_channels = clip.audio.channels as usize;
-                            let clip_total_frames = clip.audio.samples.len() / clip_channels;
+                            let clip_channels = clip.audio.channels() as usize;
+                            let clip_total_frames = clip.audio.frames();
 
                             // Calculate effective length (accounting for offset and explicit length)
-                            let available_frames = clip_total_frames.saturating_sub(clip.offset as usize);
+                            let available_frames =
+                                clip_total_frames.saturating_sub(clip.offset as usize);
                             let effective_length = match clip.length {
                                 Some(len) => (len as usize).min(available_frames),
                                 None => available_frames,
@@ -170,14 +157,15 @@ where
                             if state.position >= clip_start && state.position < clip_end {
                                 let timeline_offset = state.position - clip_start;
                                 // Add clip.offset to get the actual position in the audio buffer
-                                let frame_index = (clip.offset as usize) + (timeline_offset as usize);
+                                let frame_index =
+                                    (clip.offset as usize) + (timeline_offset as usize);
 
                                 if frame_index < clip_total_frames {
                                     for (ch, mix_sample) in mixed.iter_mut().enumerate() {
                                         let clip_ch = ch % clip_channels;
                                         let idx = frame_index * clip_channels + clip_ch;
-                                        if idx < clip.audio.samples.len() {
-                                            *mix_sample += clip.audio.samples[idx] * track.volume;
+                                        if idx < clip.audio.samples().len() {
+                                            *mix_sample += clip.audio.samples()[idx] * track.volume;
                                         }
                                     }
                                 }
@@ -215,7 +203,7 @@ mod tests {
         sample_rate: u32,
         duration_secs: f32,
         channels: u16,
-    ) -> AudioBuffer {
+    ) -> AudioArc {
         let num_samples = (sample_rate as f32 * duration_secs) as usize;
         let mut samples = Vec::with_capacity(num_samples * channels as usize);
 
@@ -228,40 +216,36 @@ mod tests {
             }
         }
 
-        AudioBuffer {
-            samples,
-            sample_rate,
-            channels,
-        }
+        AudioArc::new(samples, sample_rate, channels)
     }
 
     #[test]
     fn test_resample_no_change_same_rate() {
         let buffer = generate_sine_wave(440.0, 44100, 0.1, 2);
-        let original_len = buffer.samples.len();
-        let original_rate = buffer.sample_rate;
+        let original_len = buffer.len();
+        let original_rate = buffer.sample_rate();
 
-        let resampled = resample_audio(&buffer, 44100).expect("resample failed");
+        let resampled = buffer.resample(44100).expect("resample failed");
 
-        assert_eq!(resampled.sample_rate, original_rate);
-        assert_eq!(resampled.channels, 2);
-        assert_eq!(resampled.samples.len(), original_len);
+        assert_eq!(resampled.sample_rate(), original_rate);
+        assert_eq!(resampled.channels(), 2);
+        assert_eq!(resampled.len(), original_len);
     }
 
     #[test]
     fn test_resample_upsampling() {
         // Resample from 44100 to 48000
         let buffer = generate_sine_wave(440.0, 44100, 0.1, 2);
-        let original_frames = buffer.samples.len() / buffer.channels as usize;
+        let original_frames = buffer.frames();
 
-        let resampled = resample_audio(&buffer, 48000).expect("resample failed");
+        let resampled = buffer.resample(48000).expect("resample failed");
 
-        assert_eq!(resampled.sample_rate, 48000);
-        assert_eq!(resampled.channels, 2);
+        assert_eq!(resampled.sample_rate(), 48000);
+        assert_eq!(resampled.channels(), 2);
 
         // Output should be approximately scaled by the ratio
         let expected_frames = (original_frames as f64 * 48000.0 / 44100.0) as usize;
-        let resampled_frames = resampled.samples.len() / resampled.channels as usize;
+        let resampled_frames = resampled.frames();
 
         // Allow some tolerance for filter delay and rounding (about 3% tolerance)
         let tolerance = (expected_frames as f64 * 0.03) as i32;
@@ -278,16 +262,16 @@ mod tests {
     fn test_resample_downsampling() {
         // Resample from 48000 to 44100
         let buffer = generate_sine_wave(440.0, 48000, 0.1, 2);
-        let original_frames = buffer.samples.len() / buffer.channels as usize;
+        let original_frames = buffer.frames();
 
-        let resampled = resample_audio(&buffer, 44100).expect("resample failed");
+        let resampled = buffer.resample(44100).expect("resample failed");
 
-        assert_eq!(resampled.sample_rate, 44100);
-        assert_eq!(resampled.channels, 2);
+        assert_eq!(resampled.sample_rate(), 44100);
+        assert_eq!(resampled.channels(), 2);
 
         // Output should be approximately scaled by the ratio
         let expected_frames = (original_frames as f64 * 44100.0 / 48000.0) as usize;
-        let resampled_frames = resampled.samples.len() / resampled.channels as usize;
+        let resampled_frames = resampled.frames();
 
         // Allow some tolerance for filter delay and rounding (about 3% tolerance)
         let tolerance = (expected_frames as f64 * 0.03) as i32;
@@ -306,12 +290,12 @@ mod tests {
         let buffer = generate_sine_wave(440.0, 44100, 0.1, 1);
 
         // Resample to 48000 Hz
-        let resampled = resample_audio(&buffer, 48000).expect("resample failed");
+        let resampled = buffer.resample(48000).expect("resample failed");
 
         // The frequency content should be preserved
         // We'll check this by verifying zero crossings are at the expected rate
-        let zero_crossings = count_zero_crossings(&resampled.samples);
-        let duration = resampled.samples.len() as f32 / resampled.sample_rate as f32;
+        let zero_crossings = count_zero_crossings(resampled.samples());
+        let duration = resampled.frames() as f32 / resampled.sample_rate() as f32;
         let estimated_frequency = zero_crossings as f32 / (2.0 * duration);
 
         // Allow 5% tolerance
@@ -323,44 +307,27 @@ mod tests {
     }
 
     #[test]
-    fn test_resample_clip() {
-        let audio = generate_sine_wave(440.0, 44100, 0.1, 2);
-        let clip = EngineClip {
-            start: 0,
-            audio: Arc::new(audio),
-            offset: 0,
-            length: None,
-        };
-
-        let resampled_clip = resample_clip(clip, 48000).expect("resample clip failed");
-
-        assert_eq!(resampled_clip.start, 0);
-        assert_eq!(resampled_clip.audio.sample_rate, 48000);
-        assert_eq!(resampled_clip.audio.channels, 2);
-    }
-
-    #[test]
     fn test_resample_mono_to_mono() {
         let buffer = generate_sine_wave(440.0, 44100, 0.05, 1);
-        let resampled = resample_audio(&buffer, 48000).expect("resample failed");
+        let resampled = buffer.resample(48000).expect("resample failed");
 
-        assert_eq!(resampled.channels, 1);
-        assert_eq!(resampled.sample_rate, 48000);
+        assert_eq!(resampled.channels(), 1);
+        assert_eq!(resampled.sample_rate(), 48000);
     }
 
     #[test]
     fn test_resample_extreme_ratio() {
         // Test a more extreme resampling ratio
         let buffer = generate_sine_wave(440.0, 22050, 0.05, 2);
-        let resampled = resample_audio(&buffer, 96000).expect("resample failed");
+        let resampled = buffer.resample(96000).expect("resample failed");
 
-        assert_eq!(resampled.sample_rate, 96000);
-        assert_eq!(resampled.channels, 2);
+        assert_eq!(resampled.sample_rate(), 96000);
+        assert_eq!(resampled.channels(), 2);
 
         // Check the length is approximately scaled
-        let original_frames = buffer.samples.len() / buffer.channels as usize;
+        let original_frames = buffer.frames();
         let expected_frames = (original_frames as f64 * 96000.0 / 22050.0) as usize;
-        let resampled_frames = resampled.samples.len() / resampled.channels as usize;
+        let resampled_frames = resampled.frames();
 
         // Allow some tolerance for filter delay and rounding (about 12% tolerance for extreme ratios)
         let tolerance = (expected_frames as f64 * 0.12) as i32;

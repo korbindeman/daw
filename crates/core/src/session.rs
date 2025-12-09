@@ -1,23 +1,21 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use basedrop::Shared;
-use rayon::prelude::*;
 
 use crate::time::{TimeContext, TimeSignature};
-use daw_decode::{decode_file_direct, strip_samples_root};
+use daw_decode::{AudioCache, decode_audio_arc_direct, strip_samples_root};
 use daw_engine::{AudioEngineHandle, EngineClip, EngineCommand, EngineStatus, EngineTrack};
 use daw_project::{load_project, save_project};
 use daw_render::{render_timeline, write_wav};
-use daw_transport::{AudioBuffer, PPQN, Segment, Track, TrackId, resample_audio};
+use daw_transport::{AudioArc, PPQN, Segment, Track, TrackId};
 
 /// Metronome samples and state
 pub struct Metronome {
     /// Sample for beat 1 (downbeat)
-    pub hi: Arc<AudioBuffer>,
+    pub hi: AudioArc,
     /// Sample for other beats
-    pub lo: Arc<AudioBuffer>,
+    pub lo: AudioArc,
     /// Whether metronome is enabled
     pub enabled: bool,
     /// Volume (0.0 to 1.0)
@@ -27,12 +25,12 @@ pub struct Metronome {
 impl Metronome {
     /// Load metronome samples from the assets directory
     pub fn load() -> anyhow::Result<Self> {
-        let hi = decode_file_direct(Path::new("assets/metronome_hi.wav"))?;
-        let lo = decode_file_direct(Path::new("assets/metronome_lo.wav"))?;
+        let hi = decode_audio_arc_direct(Path::new("assets/metronome_hi.wav"), None)?;
+        let lo = decode_audio_arc_direct(Path::new("assets/metronome_lo.wav"), None)?;
 
         Ok(Self {
-            hi: Arc::new(hi),
-            lo: Arc::new(lo),
+            hi,
+            lo,
             enabled: false,
             volume: 0.8,
         })
@@ -52,17 +50,14 @@ impl PlaybackState {
     }
 }
 
-/// Cache key for resampled audio: (pointer to original audio, target sample rate)
-type ResampleCacheKey = (usize, u32);
-
 pub struct Session {
     engine: AudioEngineHandle,
     tracks: Vec<Track>,
     time_context: TimeContext,
     current_tick: u64,
     playback_state: PlaybackState,
-    /// Cache of resampled audio buffers, keyed by (original audio pointer, target sample rate)
-    resample_cache: HashMap<ResampleCacheKey, Arc<AudioBuffer>>,
+    /// Cache for decoded and resampled audio
+    cache: AudioCache,
     /// Mapping from segment name to audio file path (relative to samples root)
     audio_paths: HashMap<String, PathBuf>,
     /// Path to the project file (if loaded from or saved to a file)
@@ -103,7 +98,7 @@ impl Session {
             time_context,
             current_tick: 0,
             playback_state: PlaybackState::Stopped,
-            resample_cache: HashMap::new(),
+            cache: AudioCache::new(),
             audio_paths,
             project_path: None,
             name: "Untitled".to_string(),
@@ -226,23 +221,18 @@ impl Session {
 
     /// Generate a metronome track with clicks on each beat
     fn generate_metronome_track(&mut self, sample_rate: u32) -> Option<EngineTrack> {
-        // Ensure metronome samples are in the resample cache
-        for audio in [&self.metronome.hi, &self.metronome.lo] {
-            let key = (Arc::as_ptr(audio) as usize, sample_rate);
-            if !self.resample_cache.contains_key(&key) {
-                if audio.sample_rate == sample_rate {
-                    self.resample_cache.insert(key, audio.clone());
-                } else if let Ok(resampled) = resample_audio(audio, sample_rate) {
-                    self.resample_cache.insert(key, Arc::new(resampled));
-                }
-            }
-        }
+        // Resample metronome samples if needed (cheap clone if already at target rate)
+        let hi_audio = if self.metronome.hi.sample_rate() == sample_rate {
+            self.metronome.hi.clone()
+        } else {
+            self.metronome.hi.resample(sample_rate).ok()?
+        };
 
-        let hi_key = (Arc::as_ptr(&self.metronome.hi) as usize, sample_rate);
-        let lo_key = (Arc::as_ptr(&self.metronome.lo) as usize, sample_rate);
-
-        let hi_audio = self.resample_cache.get(&hi_key)?.clone();
-        let lo_audio = self.resample_cache.get(&lo_key)?.clone();
+        let lo_audio = if self.metronome.lo.sample_rate() == sample_rate {
+            self.metronome.lo.clone()
+        } else {
+            self.metronome.lo.resample(sample_rate).ok()?
+        };
 
         // Calculate timeline length based on content
         let max_tick = self.calculate_max_tick();
@@ -292,48 +282,8 @@ impl Session {
     }
 
     fn convert_tracks_for_engine(&mut self, sample_rate: u32) -> Vec<EngineTrack> {
-        // Collect unique audio buffers by pointer address (avoids needing Hash on AudioBuffer)
-        let mut unique_audios: HashMap<usize, Arc<AudioBuffer>> = HashMap::new();
-        for track in &self.tracks {
-            for segment in track.segments() {
-                let ptr = Arc::as_ptr(&segment.audio) as usize;
-                unique_audios
-                    .entry(ptr)
-                    .or_insert_with(|| segment.audio.clone());
-            }
-        }
-
-        // Filter to only those not already in cache
-        let to_resample: Vec<Arc<AudioBuffer>> = unique_audios
-            .into_values()
-            .filter(|audio| {
-                let key = (Arc::as_ptr(audio) as usize, sample_rate);
-                !self.resample_cache.contains_key(&key)
-            })
-            .collect();
-
-        // Resample in parallel
-        let resampled: Vec<(ResampleCacheKey, Arc<AudioBuffer>)> = to_resample
-            .par_iter()
-            .filter_map(|audio| {
-                let key = (Arc::as_ptr(audio) as usize, sample_rate);
-                if audio.sample_rate == sample_rate {
-                    // No resampling needed, use original
-                    Some((key, audio.clone()))
-                } else {
-                    resample_audio(audio, sample_rate)
-                        .ok()
-                        .map(|resampled| (key, Arc::new(resampled)))
-                }
-            })
-            .collect();
-
-        // Insert into cache
-        for (key, audio) in resampled {
-            self.resample_cache.insert(key, audio);
-        }
-
-        // Build engine tracks using cached resampled audio (skip disabled tracks)
+        // Build engine tracks from segments, resampling audio if needed
+        // Note: Segments already have AudioArc, which makes cloning cheap
         self.tracks
             .iter()
             .filter(|track| track.enabled)
@@ -342,16 +292,21 @@ impl Session {
                     .segments()
                     .iter()
                     .filter_map(|segment| {
-                        let key = (Arc::as_ptr(&segment.audio) as usize, sample_rate);
-                        let resampled_audio = self.resample_cache.get(&key)?;
+                        // Resample audio if not at engine sample rate
+                        // If already at target rate, this is just a cheap Arc clone
+                        let audio = if segment.audio.sample_rate() == sample_rate {
+                            segment.audio.clone()
+                        } else {
+                            segment.audio.resample(sample_rate).ok()?
+                        };
+
                         // Convert duration from ticks to samples
-                        let length_samples = self.ticks_to_samples_with_rate(
-                            segment.duration_ticks(),
-                            sample_rate,
-                        );
+                        let length_samples =
+                            self.ticks_to_samples_with_rate(segment.duration_ticks(), sample_rate);
+
                         Some(EngineClip {
                             start: self.ticks_to_samples_with_rate(segment.start_tick, sample_rate),
-                            audio: resampled_audio.clone(),
+                            audio,
                             offset: segment.audio_offset,
                             length: Some(length_samples),
                         })
