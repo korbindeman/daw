@@ -403,9 +403,6 @@ impl Render for Daw {
                 .detach();
             }))
             .on_action(cx.listener(|this, _: &RenderProject, _, cx| {
-                let session = &this.session;
-                let tempo = session.tempo();
-                let tracks = session.tracks().to_vec();
                 let start_dir = this.config.picker_directories.get("render").cloned();
                 let default_name = this
                     .project_path
@@ -435,12 +432,11 @@ impl Render for Daw {
                                             .insert("render".to_string(), parent.to_path_buf());
                                         daw.config.save();
                                     }
+                                    if let Err(e) = daw.session.render_to_file(&path) {
+                                        eprintln!("Failed to render: {}", e);
+                                    }
                                 })
                             });
-                            let buffer = daw_core::render_timeline(&tracks, tempo, 44100, 2);
-                            if let Err(e) = daw_core::write_wav(&buffer, &path) {
-                                eprintln!("Failed to render: {}", e);
-                            }
                         }
                     },
                 )

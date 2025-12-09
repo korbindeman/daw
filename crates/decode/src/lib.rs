@@ -247,6 +247,7 @@ pub fn decode_audio_arc_direct(
 /// // This reuses the decoded original and caches the 44.1kHz version
 /// let audio_cd = cache.get_or_load(Path::new("kick.wav"), Some(44100)).unwrap();
 /// ```
+#[derive(Debug)]
 pub struct AudioCache {
     /// Original decoded audio (no resampling): file_hash -> AudioArc
     originals: HashMap<u64, AudioArc>,

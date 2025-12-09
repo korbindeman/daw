@@ -14,6 +14,8 @@ pub struct LoadedProject {
     pub tracks: Vec<Track>,
     /// Mapping from segment name to audio file path
     pub audio_paths: HashMap<String, std::path::PathBuf>,
+    /// Audio cache used during loading (contains decoded and resampled audio)
+    pub cache: daw_decode::AudioCache,
 }
 
 #[derive(Debug, Clone)]
@@ -52,8 +54,16 @@ pub fn load_project_metadata(path: &Path) -> Result<ProjectMetadata, ProjectErro
 }
 
 pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
+    load_project_with_sample_rate(path, None)
+}
+
+pub fn load_project_with_sample_rate(
+    path: &Path,
+    target_sample_rate: Option<u32>,
+) -> Result<LoadedProject, ProjectError> {
     let project = load_project_data(path)?;
 
+    let mut cache = daw_decode::AudioCache::new();
     let mut tracks = Vec::new();
     let mut audio_paths = HashMap::new();
 
@@ -63,12 +73,11 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
         track.enabled = track_data.enabled;
 
         for segment_data in &track_data.segments {
-            let audio =
-                daw_decode::decode_audio_arc(&segment_data.audio_path, None).map_err(|e| {
-                    ProjectError::AudioDecode {
-                        path: segment_data.audio_path.clone(),
-                        source: e,
-                    }
+            let audio = cache
+                .get_or_load(&segment_data.audio_path, target_sample_rate)
+                .map_err(|e| ProjectError::AudioDecode {
+                    path: segment_data.audio_path.clone(),
+                    source: e,
                 })?;
 
             audio_paths.insert(segment_data.name.clone(), segment_data.audio_path.clone());
@@ -94,6 +103,7 @@ pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
         time_signature: project.time_signature,
         tracks,
         audio_paths,
+        cache,
     })
 }
 

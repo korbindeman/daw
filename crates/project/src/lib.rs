@@ -4,7 +4,7 @@ mod save;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub use load::{ProjectMetadata, load_project, load_project_metadata};
+pub use load::{load_project, load_project_metadata, load_project_with_sample_rate, ProjectMetadata};
 pub use save::save_project;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -557,8 +557,7 @@ impl eframe::App for SequencerApp {
                         if (30.0..=300.0).contains(&t) {
                             self.tempo = t;
                             if let Some(ref mut session) = self.session {
-                                session.time_context_mut().tempo = t;
-                                session.update_tempo();
+                                session.set_tempo(t);
                             }
                         } else {
                             self.tempo_input = format!("{:.0}", self.tempo);
