@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use theme::ActiveTheme;
 use ui::{
-    Header, HeaderEvent, Playhead, SegmentId, Sidebar, TimelineRuler, Track, TrackEvent,
+    Cursor, Header, HeaderEvent, Playhead, RulerEvent, SegmentId, TimelineRuler, Track, TrackEvent,
     TrackLabels, TrackLabelsEvent,
 };
 
@@ -27,6 +27,7 @@ struct Daw {
     session: Session,
     header_handle: Entity<Header>,
     playhead_handle: Entity<Playhead>,
+    cursor_handle: Entity<Cursor>,
     track_labels_handle: Entity<TrackLabels>,
     track_entities: Vec<Entity<Track>>,
     focus_handle: FocusHandle,
@@ -34,6 +35,7 @@ struct Daw {
     selected_segments: Vec<SegmentId>,
     last_tick: Option<u64>,
     config: Config,
+    scroll_handle: gpui::ScrollHandle,
 }
 
 impl Daw {
@@ -68,6 +70,7 @@ impl Daw {
 
         let pixels_per_beat = session.time_context().pixels_per_beat;
         let playhead = cx.new(|_| Playhead::new(0, pixels_per_beat));
+        let cursor = cx.new(|_| Cursor::new(Some(0), pixels_per_beat)); // Initialize at tick 0
 
         let tracks = session.tracks().to_vec();
         let track_labels = cx.new(|_| TrackLabels::new(tracks.clone()));
@@ -102,6 +105,9 @@ impl Daw {
                     TrackEvent::SegmentClicked(segment_id) => {
                         this.toggle_segment_selection(segment_id.clone(), cx);
                     }
+                    TrackEvent::EmptySpaceClicked(x_pos) => {
+                        this.handle_timeline_click(*x_pos, cx);
+                    }
                 },
             )
             .detach();
@@ -113,6 +119,7 @@ impl Daw {
             session,
             header_handle: header,
             playhead_handle: playhead,
+            cursor_handle: cursor,
             track_labels_handle: track_labels,
             track_entities,
             focus_handle,
@@ -120,6 +127,7 @@ impl Daw {
             selected_segments: Vec::new(),
             last_tick: None,
             config: Config::load(),
+            scroll_handle: gpui::ScrollHandle::new(),
         }
     }
 
@@ -158,6 +166,12 @@ impl Daw {
                     cx.notify();
                 });
 
+                // Reset cursor to beginning
+                self.cursor_handle.update(cx, |cursor, cx| {
+                    cursor.set_tick(Some(0));
+                    cx.notify();
+                });
+
                 // Update track labels with new tracks
                 self.update_track_labels(cx);
 
@@ -170,6 +184,148 @@ impl Daw {
                 eprintln!("Failed to load project: {}", e);
             }
         }
+    }
+
+    fn render_grid_lines(
+        &self,
+        pixels_per_beat: f64,
+        time_signature: daw_core::TimeSignature,
+        timeline_width: f64,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        use daw_core::{PPQN, SnapMode};
+
+        let theme = cx.theme();
+        let snap_mode = self.session.snap_mode();
+        let beats_per_bar = time_signature.numerator;
+
+        let mut grid_lines = vec![];
+
+        match snap_mode {
+            SnapMode::None => {
+                // No grid lines when snapping is disabled
+            }
+            SnapMode::Beat => {
+                // One line per beat
+                let total_beats = (timeline_width / pixels_per_beat).ceil() as u32;
+                for beat in 0..=total_beats {
+                    let x_pos = beat as f64 * pixels_per_beat;
+                    let is_bar_start = beat % beats_per_bar == 0;
+
+                    grid_lines.push(
+                        div()
+                            .absolute()
+                            .left(px(x_pos as f32))
+                            .top(px(0.))
+                            .bottom(px(0.))
+                            .w(px(1.))
+                            .bg(if is_bar_start {
+                                theme.border
+                            } else {
+                                theme.border.opacity(0.3)
+                            }),
+                    );
+                }
+            }
+            SnapMode::HalfBeat => {
+                // Two lines per beat
+                let total_half_beats = (timeline_width / (pixels_per_beat / 2.0)).ceil() as u32;
+                for half_beat in 0..=total_half_beats {
+                    let x_pos = half_beat as f64 * (pixels_per_beat / 2.0);
+                    let is_beat = half_beat % 2 == 0;
+                    let is_bar_start = is_beat && (half_beat / 2) % beats_per_bar == 0;
+
+                    grid_lines.push(
+                        div()
+                            .absolute()
+                            .left(px(x_pos as f32))
+                            .top(px(0.))
+                            .bottom(px(0.))
+                            .w(px(1.))
+                            .bg(if is_bar_start {
+                                theme.border
+                            } else if is_beat {
+                                theme.border.opacity(0.5)
+                            } else {
+                                theme.border.opacity(0.2)
+                            }),
+                    );
+                }
+            }
+            SnapMode::QuarterBeat => {
+                // Four lines per beat
+                let total_quarter_beats = (timeline_width / (pixels_per_beat / 4.0)).ceil() as u32;
+                for quarter_beat in 0..=total_quarter_beats {
+                    let x_pos = quarter_beat as f64 * (pixels_per_beat / 4.0);
+                    let is_beat = quarter_beat % 4 == 0;
+                    let is_bar_start = is_beat && (quarter_beat / 4) % beats_per_bar == 0;
+
+                    grid_lines.push(
+                        div()
+                            .absolute()
+                            .left(px(x_pos as f32))
+                            .top(px(0.))
+                            .bottom(px(0.))
+                            .w(px(1.))
+                            .bg(if is_bar_start {
+                                theme.border
+                            } else if is_beat {
+                                theme.border.opacity(0.5)
+                            } else {
+                                theme.border.opacity(0.15)
+                            }),
+                    );
+                }
+            }
+            SnapMode::Bar => {
+                // One line per bar
+                let ticks_per_bar = time_signature.ticks_per_bar();
+                let pixels_per_bar = (ticks_per_bar as f64 / PPQN as f64) * pixels_per_beat;
+                let total_bars = (timeline_width / pixels_per_bar).ceil() as u32;
+
+                for bar in 0..=total_bars {
+                    let x_pos = bar as f64 * pixels_per_bar;
+
+                    grid_lines.push(
+                        div()
+                            .absolute()
+                            .left(px(x_pos as f32))
+                            .top(px(0.))
+                            .bottom(px(0.))
+                            .w(px(1.))
+                            .bg(theme.border),
+                    );
+                }
+            }
+        }
+
+        div()
+            .absolute()
+            .top(px(0.))
+            .left(px(0.))
+            .right(px(0.))
+            .bottom(px(0.))
+            .children(grid_lines)
+    }
+
+    fn handle_timeline_click(&mut self, x_pos: f64, cx: &mut Context<Self>) {
+        // x_pos is viewport-relative, need to subtract scroll offset to get content position
+        // (scroll_x is negative when scrolled right)
+        let scroll_offset = self.scroll_handle.offset();
+        let scroll_x: f32 = scroll_offset.x.into();
+        let content_x = x_pos - scroll_x as f64;
+
+        // Convert pixel position to ticks
+        let tick = self.session.time_context().pixels_to_ticks(content_x);
+
+        // Set cursor in session (will apply snapping)
+        self.session.set_cursor(tick);
+
+        // Update cursor UI
+        self.cursor_handle.update(cx, |cursor, cx| {
+            cursor.set_tick(self.session.cursor_tick());
+            cx.notify();
+        });
     }
 
     fn toggle_segment_selection(&mut self, segment_id: SegmentId, cx: &mut Context<Self>) {
@@ -211,6 +367,9 @@ impl Daw {
                 |this, _track, event: &TrackEvent, cx| match event {
                     TrackEvent::SegmentClicked(segment_id) => {
                         this.toggle_segment_selection(segment_id.clone(), cx);
+                    }
+                    TrackEvent::EmptySpaceClicked(x_pos) => {
+                        this.handle_timeline_click(*x_pos, cx);
                     }
                 },
             )
@@ -283,9 +442,28 @@ impl Daw {
     }
 
     fn stop(&mut self, header: &Entity<Header>, cx: &mut Context<Self>) {
+        let was_playing = self.session.is_playing();
         self.session.stop();
-        self.last_tick = None;
-        header.update(cx, |header, cx| header.set_playing(false, cx));
+
+        if was_playing {
+            // Just paused - update header only
+            header.update(cx, |header, cx| header.set_playing(false, cx));
+        } else {
+            // Reset to beginning - update cursor and playhead UI
+            self.last_tick = None;
+            header.update(cx, |header, cx| {
+                header.set_tick(0, cx);
+                header.set_playing(false, cx);
+            });
+            self.playhead_handle.update(cx, |playhead, cx| {
+                playhead.set_tick(0);
+                cx.notify();
+            });
+            self.cursor_handle.update(cx, |cursor, cx| {
+                cursor.set_tick(Some(0));
+                cx.notify();
+            });
+        }
     }
 
     fn toggle_metronome(&mut self, header: &Entity<Header>, cx: &mut Context<Self>) {
@@ -306,6 +484,10 @@ impl Render for Daw {
 
         let header_handle = self.header_handle.clone();
 
+        // Create ruler (without click handler - ruler shouldn't move cursor)
+        let ruler =
+            cx.new(|_| TimelineRuler::new(pixels_per_beat, time_signature.into(), timeline_width));
+
         div()
             .id("root")
             .size_full()
@@ -317,8 +499,10 @@ impl Render for Daw {
                 let is_playing = this.session.is_playing();
                 header_handle.update(cx, |_, cx| {
                     if is_playing {
+                        // Stop playback (pauses, next press will play from cursor)
                         cx.emit(HeaderEvent::Stop);
                     } else {
+                        // Play from cursor (or resume from pause if paused)
                         cx.emit(HeaderEvent::Play);
                     }
                 });
@@ -463,23 +647,29 @@ impl Render for Daw {
                                     .bottom_0()
                                     .flex()
                                     .flex_col()
-                                    .child(cx.new(|_| {
-                                        TimelineRuler::new(
-                                            pixels_per_beat,
-                                            time_signature.into(),
-                                            timeline_width,
-                                        )
-                                    }))
+                                    .child(ruler)
                                     .child(
                                         div()
                                             .id("track_container")
                                             .flex_1()
                                             .overflow_scroll()
+                                            .track_scroll(&self.scroll_handle)
                                             .child(
                                                 div()
-                                                    .w(px(timeline_width as f32))
+                                                    .min_w(px(timeline_width as f32))
+                                                    .w_full()
+                                                    .h_full()
                                                     .relative()
+                                                    .on_mouse_down(
+                                                        gpui::MouseButton::Left,
+                                                        cx.listener(|this, event: &gpui::MouseDownEvent, _window, cx| {
+                                                            let x_pos: f32 = event.position.x.into();
+                                                            this.handle_timeline_click(x_pos as f64, cx);
+                                                        }),
+                                                    )
+                                                    .child(self.render_grid_lines(pixels_per_beat, time_signature, timeline_width, cx))
                                                     .children(self.track_entities.iter().cloned())
+                                                    .child(self.cursor_handle.clone())
                                                     .child(self.playhead_handle.clone()),
                                             ),
                                     ),

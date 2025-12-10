@@ -1,7 +1,14 @@
 use crate::theme::ActiveTheme;
-use gpui::{Context, Window, div, prelude::*, px};
+use gpui::{Context, EventEmitter, MouseDownEvent, Window, div, prelude::*, px};
 
 const RULER_HEIGHT: f32 = 20.0;
+
+#[derive(Debug)]
+pub enum RulerEvent {
+    Clicked(f64), // pixel position clicked
+}
+
+impl EventEmitter<RulerEvent> for TimelineRuler {}
 
 pub struct TimelineRuler {
     pixels_per_beat: f64,
@@ -68,6 +75,13 @@ impl Render for TimelineRuler {
             .border_b_1()
             .border_color(theme.border)
             .relative()
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|_ruler, event: &MouseDownEvent, _window, cx| {
+                    let x_pos: f32 = event.position.x.into();
+                    cx.emit(RulerEvent::Clicked(x_pos as f64));
+                }),
+            )
             .children(markers)
     }
 }

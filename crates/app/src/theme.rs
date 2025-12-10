@@ -33,38 +33,38 @@ impl Theme {
     /// Dark theme (default)
     pub fn dark() -> Self {
         Self {
-            // Backgrounds
-            background: hsla(0.12, 0.08, 0.18, 1.0), // warm dark gray
-            surface: hsla(0.0, 0.0, 0.28, 1.0),      // lighter for sidebar/ruler
-            elevated: hsla(0.0, 0.0, 0.71, 1.0),     // #B6B6B6 - timeline background
-            header: hsla(0.0, 0.0, 0.58, 1.0),       // darker gray for header
+            // Backgrounds - Gruvbox-inspired warm yellows/browns
+            background: hsla(0.10, 0.15, 0.16, 1.0), // warm dark brown (gruvbox bg)
+            surface: hsla(0.10, 0.12, 0.22, 1.0),    // lighter warm brown for sidebar/ruler
+            elevated: hsla(0.12, 0.08, 0.66, 1.0),   // warm beige/tan - timeline background
+            header: hsla(0.10, 0.10, 0.30, 1.0),     // warm medium brown for header
 
             // Borders
-            border: hsla(0.12, 0.05, 0.30, 1.0), // warm gray border
-            border_focused: hsla(0.58, 0.6, 0.5, 1.0), // blue-ish
+            border: hsla(0.10, 0.08, 0.28, 0.5), // subtle warm brown border with transparency
+            border_focused: hsla(0.12, 0.45, 0.58, 1.0), // gruvbox yellow accent
 
             // Text
-            text: hsla(0.0, 0.0, 0.95, 1.0), // bright white for buttons
-            text_muted: hsla(0.12, 0.04, 0.55, 1.0), // warm gray
+            text: hsla(0.12, 0.12, 0.92, 1.0), // warm off-white (gruvbox fg)
+            text_muted: hsla(0.10, 0.08, 0.52, 1.0), // warm muted tan
 
             // Interactive elements
-            element: hsla(0.58, 0.02, 0.45, 1.0), // slightly darker steel for buttons
-            element_hover: hsla(0.58, 0.02, 0.50, 1.0),
-            element_active: hsla(0.58, 0.02, 0.40, 1.0),
+            element: hsla(0.10, 0.12, 0.40, 1.0), // warm brown for buttons
+            element_hover: hsla(0.10, 0.12, 0.46, 1.0),
+            element_active: hsla(0.10, 0.12, 0.34, 1.0),
 
-            // Accent - red for playhead
-            accent: hsla(0.0, 0.75, 0.50, 1.0),
+            // Accent - warm orange/red for playhead (gruvbox red)
+            accent: hsla(0.02, 0.72, 0.55, 1.0),
 
-            // Waveform color is derived in track.rs
+            // Waveform color is derived in track.rs - Gruvbox palette
             track_colors: vec![
-                hsla(0.85, 0.31, 0.67, 1.0), // Pink #C592C0
-                hsla(0.62, 0.28, 0.65, 1.0), // Blue #8E9CBF
-                hsla(0.08, 0.60, 0.72, 1.0), // Peach
-                hsla(0.14, 0.60, 0.75, 1.0), // Yellow
-                hsla(0.35, 0.50, 0.65, 1.0), // Green
-                hsla(0.50, 0.50, 0.68, 1.0), // Cyan
-                hsla(0.75, 0.50, 0.70, 1.0), // Purple
-                hsla(0.85, 0.50, 0.70, 1.0), // Magenta
+                hsla(0.92, 0.38, 0.68, 1.0), // Gruvbox purple
+                hsla(0.58, 0.42, 0.65, 1.0), // Gruvbox blue
+                hsla(0.08, 0.68, 0.70, 1.0), // Gruvbox orange
+                hsla(0.12, 0.65, 0.72, 1.0), // Gruvbox yellow
+                hsla(0.35, 0.48, 0.62, 1.0), // Gruvbox green
+                hsla(0.48, 0.52, 0.66, 1.0), // Gruvbox aqua
+                hsla(0.02, 0.65, 0.64, 1.0), // Gruvbox red
+                hsla(0.85, 0.40, 0.70, 1.0), // Gruvbox magenta
             ],
         }
     }

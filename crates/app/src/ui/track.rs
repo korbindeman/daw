@@ -14,6 +14,7 @@ pub struct SegmentId(pub String);
 #[derive(Debug)]
 pub enum TrackEvent {
     SegmentClicked(SegmentId),
+    EmptySpaceClicked(f64), // pixel position clicked
 }
 
 impl EventEmitter<TrackEvent> for Track {}
@@ -55,6 +56,19 @@ impl Render for Track {
 
         let selected_segments = self.selected_segments.clone();
 
+        // Create segments with bounds tracking for click detection
+        let segment_bounds: Vec<(f64, f64)> = self
+            .track
+            .segments()
+            .iter()
+            .map(|segment| {
+                let start_px = (segment.start_tick as f64 / PPQN as f64) * self.pixels_per_beat;
+                let duration_ticks = segment.duration_ticks();
+                let width_px = (duration_ticks as f64 / PPQN as f64) * self.pixels_per_beat;
+                (start_px, start_px + width_px)
+            })
+            .collect();
+
         let segments: Vec<_> = self
             .track
             .segments()
@@ -76,7 +90,7 @@ impl Render for Track {
                 )
                 .on_mouse_down(
                     gpui::MouseButton::Left,
-                    cx.listener(move |_track, _event, _window, cx| {
+                    cx.listener(move |_track, _event: &gpui::MouseDownEvent, _window, cx| {
                         cx.emit(TrackEvent::SegmentClicked(segment_id.clone()));
                     }),
                 )
@@ -88,7 +102,30 @@ impl Render for Track {
             .h(px(TRACK_HEIGHT))
             .border_b_1()
             .border_color(theme.border)
-            .child(div().w_full().h_full().relative().children(segments))
+            .child(
+                div()
+                    .w_full()
+                    .h_full()
+                    .relative()
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(move |_track, event: &gpui::MouseDownEvent, _window, cx| {
+                            let x_pos: f32 = event.position.x.into();
+                            let x_pos_f64 = x_pos as f64;
+
+                            // Check if click is within any segment bounds
+                            let clicked_on_segment = segment_bounds
+                                .iter()
+                                .any(|(start, end)| x_pos_f64 >= *start && x_pos_f64 <= *end);
+
+                            // Only emit empty space click if we didn't click on a segment
+                            if !clicked_on_segment {
+                                cx.emit(TrackEvent::EmptySpaceClicked(x_pos_f64));
+                            }
+                        }),
+                    )
+                    .children(segments),
+            )
     }
 }
 
@@ -131,7 +168,6 @@ fn render_segment(
                 .px_1()
                 .flex()
                 .items_center()
-                .cursor(CursorStyle::PointingHand)
                 .child(
                     div()
                         .text_xs()

@@ -274,8 +274,10 @@ impl Render for Header {
                                         gpui::MouseButton::Left,
                                         cx.listener(|this, _, _, cx| {
                                             if this.playing {
+                                                // Pause at current position
                                                 cx.emit(HeaderEvent::Pause);
                                             } else {
+                                                // Play from cursor (or resume from paused position)
                                                 cx.emit(HeaderEvent::Play);
                                             }
                                         }),

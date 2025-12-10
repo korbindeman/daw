@@ -1,7 +1,7 @@
 pub mod session;
 pub mod time;
 
-pub use session::{Metronome, PlaybackState, Session};
+pub use session::{Metronome, PlaybackState, Session, SnapMode};
 pub use time::{MusicalPosition, TimeContext, TimeSignature};
 
 // Re-export utilities and data types needed by frontends

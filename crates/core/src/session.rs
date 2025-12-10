@@ -211,6 +211,21 @@ impl Metronome {
     }
 }
 
+/// Snap mode for cursor placement and editing operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnapMode {
+    /// No snapping - cursor placed exactly where clicked
+    None,
+    /// Snap to quarter note beats (PPQN)
+    Beat,
+    /// Snap to half beats (PPQN / 2)
+    HalfBeat,
+    /// Snap to quarter beats (PPQN / 4)
+    QuarterBeat,
+    /// Snap to bars (PPQN * beats_per_bar)
+    Bar,
+}
+
 /// Current playback state of the session
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaybackState {
@@ -272,6 +287,10 @@ pub struct Session {
     name: String,
     /// Metronome state and samples
     metronome: Metronome,
+    /// Edit cursor position in ticks (None if not set)
+    cursor_tick: Option<u64>,
+    /// Snap mode for cursor and editing operations
+    snap_mode: SnapMode,
 }
 
 impl Session {
@@ -331,6 +350,8 @@ impl Session {
             project_path: None,
             name: "Untitled".to_string(),
             metronome,
+            cursor_tick: Some(0), // Initialize cursor at beginning
+            snap_mode: SnapMode::Bar,
         };
 
         // Now send the real tracks with correct sample rate conversion
@@ -377,6 +398,8 @@ impl Session {
             project_path: Some(path.to_path_buf()),
             name: project.name,
             metronome,
+            cursor_tick: Some(0), // Initialize cursor at beginning
+            snap_mode: SnapMode::QuarterBeat,
         };
 
         // Send tracks to engine (already at correct sample rate)
@@ -415,11 +438,21 @@ impl Session {
         self.save(path)
     }
 
-    /// Start playback from the current position.
+    /// Start playback.
     ///
+    /// If stopped: seeks to cursor position before playing.
+    /// If paused: resumes from current position.
     /// Sends a play command to the audio engine via a lock-free queue.
     /// The audio will start playing asynchronously.
     pub fn play(&mut self) {
+        // Only seek to cursor if we're stopped (not paused)
+        if self.playback_state == PlaybackState::Stopped {
+            if let Some(cursor_tick) = self.cursor_tick {
+                self.seek(cursor_tick);
+            }
+        }
+        // If paused, just resume from current position
+
         let _ = self.engine.commands.push(EngineCommand::Play);
         self.playback_state = PlaybackState::Playing;
     }
@@ -432,14 +465,22 @@ impl Session {
         self.playback_state = PlaybackState::Paused;
     }
 
-    /// Stop playback and reset position to the beginning.
+    /// Stop/reset playback.
     ///
-    /// This pauses the audio engine and seeks to tick 0.
+    /// If playing: stops playback (state = Stopped, next play from cursor).
+    /// If already stopped: resets to beginning (tick 0, cursor 0).
     pub fn stop(&mut self) {
-        let _ = self.engine.commands.push(EngineCommand::Pause);
-        let _ = self.engine.commands.push(EngineCommand::Seek { sample: 0 });
-        self.current_tick = 0;
-        self.playback_state = PlaybackState::Stopped;
+        if self.playback_state == PlaybackState::Playing {
+            // Stop playback - next play will be from cursor
+            let _ = self.engine.commands.push(EngineCommand::Pause);
+            self.playback_state = PlaybackState::Stopped;
+        } else {
+            // Already stopped - reset to beginning
+            let _ = self.engine.commands.push(EngineCommand::Seek { sample: 0 });
+            self.current_tick = 0;
+            self.cursor_tick = Some(0);
+            self.playback_state = PlaybackState::Stopped;
+        }
     }
 
     /// Seek to a specific tick position.
@@ -772,6 +813,70 @@ impl Session {
         if let Some(track) = self.tracks.iter_mut().find(|t| t.id.0 == track_id) {
             track.enabled = !track.enabled;
             self.send_tracks_to_engine(self.engine.sample_rate);
+        }
+    }
+
+    // Cursor and snapping methods
+
+    /// Get the current cursor position in ticks
+    pub fn cursor_tick(&self) -> Option<u64> {
+        self.cursor_tick
+    }
+
+    /// Set the cursor position to a specific tick (applies snapping if enabled)
+    pub fn set_cursor(&mut self, tick: u64) {
+        let snapped_tick = self.snap_to_grid(tick);
+        self.cursor_tick = Some(snapped_tick);
+    }
+
+    /// Clear the cursor position
+    pub fn clear_cursor(&mut self) {
+        self.cursor_tick = None;
+    }
+
+    /// Get the current snap mode
+    pub fn snap_mode(&self) -> SnapMode {
+        self.snap_mode
+    }
+
+    /// Set the snap mode
+    pub fn set_snap_mode(&mut self, mode: SnapMode) {
+        self.snap_mode = mode;
+    }
+
+    /// Snap a tick value to the current grid based on snap mode
+    pub fn snap_to_grid(&self, tick: u64) -> u64 {
+        match self.snap_mode {
+            SnapMode::None => tick,
+            SnapMode::Beat => {
+                // Snap to nearest beat (PPQN)
+                let beats = (tick as f64 / PPQN as f64).round();
+                (beats * PPQN as f64) as u64
+            }
+            SnapMode::HalfBeat => {
+                // Snap to nearest half beat (PPQN / 2)
+                let half_beats = (tick as f64 / (PPQN as f64 / 2.0)).round();
+                (half_beats * (PPQN as f64 / 2.0)) as u64
+            }
+            SnapMode::QuarterBeat => {
+                // Snap to nearest quarter beat (PPQN / 4)
+                let quarter_beats = (tick as f64 / (PPQN as f64 / 4.0)).round();
+                (quarter_beats * (PPQN as f64 / 4.0)) as u64
+            }
+            SnapMode::Bar => {
+                // Snap to nearest bar
+                let ticks_per_bar = self.time_context.time_signature.ticks_per_bar();
+                let bars = (tick as f64 / ticks_per_bar as f64).round();
+                (bars * ticks_per_bar as f64) as u64
+            }
+        }
+    }
+
+    /// Play from the cursor position (if cursor is set)
+    pub fn play_from_cursor(&mut self) {
+        if let Some(cursor_tick) = self.cursor_tick {
+            self.seek(cursor_tick);
+            self.play();
         }
     }
 }

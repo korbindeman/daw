@@ -77,7 +77,6 @@ impl Render for TrackLabels {
                                 // Enable/disable toggle button
                                 div()
                                     .id(("track-toggle", i))
-                                    .cursor_pointer()
                                     .w(px(16.))
                                     .h(px(16.))
                                     .rounded(px(2.))
