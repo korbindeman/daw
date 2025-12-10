@@ -1,5 +1,5 @@
 use daw_core::{
-    PPQN, Project, Segment, Session, TimeSignature, Track, TrackId, WaveformData, samples_to_ticks,
+    Clip, PPQN, Project, Session, TimeSignature, Track, TrackId, WaveformData, samples_to_ticks,
     strip_samples_root,
 };
 use daw_decode::decode_audio_arc;
@@ -171,7 +171,7 @@ impl SequencerApp {
                                     120.0, // default tempo for duration calculation
                                     audio.sample_rate(),
                                 );
-                                transport_track.insert_segment(Segment {
+                                transport_track.insert_clip(Clip {
                                     start_tick,
                                     end_tick: start_tick + audio_ticks,
                                     audio: audio.clone(),
@@ -200,7 +200,7 @@ impl SequencerApp {
                                     120.0, // default tempo for duration calculation
                                     audio.sample_rate(),
                                 );
-                                transport_track.insert_segment(Segment {
+                                transport_track.insert_clip(Clip {
                                     start_tick,
                                     end_tick: start_tick + audio_ticks,
                                     audio: audio.clone(),
@@ -214,7 +214,7 @@ impl SequencerApp {
                     }
                 }
 
-                if transport_track.segments().is_empty() {
+                if transport_track.clips().is_empty() {
                     return None;
                 }
 
@@ -300,7 +300,7 @@ impl SequencerApp {
                     Track::new(TrackId(track_idx as u64), track.sample_name.clone());
                 transport_track.volume = track.volume;
 
-                let mut segment_num = 1;
+                let mut clip_num = 1;
 
                 // Iterate through all pages
                 for (page_idx, page_steps) in track.pages.iter().enumerate() {
@@ -308,9 +308,9 @@ impl SequencerApp {
 
                     for (step_idx, &active) in page_steps.iter().enumerate() {
                         if active {
-                            let segment_name = format!("{} {}", track.sample_name, segment_num);
+                            let clip_name = format!("{} {}", track.sample_name, clip_num);
                             // Session::save() will strip the samples/ prefix
-                            audio_paths.insert(segment_name.clone(), sample_path.clone());
+                            audio_paths.insert(clip_name.clone(), sample_path.clone());
 
                             let waveform = WaveformData::from_audio_arc(audio, 512);
                             let start_tick = bar_offset + (step_idx as u64) * ticks_per_step;
@@ -318,15 +318,15 @@ impl SequencerApp {
                             let audio_frames = audio.samples().len() / audio.channels() as usize;
                             let audio_ticks =
                                 samples_to_ticks(audio_frames as f64, 120.0, audio.sample_rate());
-                            transport_track.insert_segment(Segment {
+                            transport_track.insert_clip(Clip {
                                 start_tick,
                                 end_tick: start_tick + audio_ticks,
                                 audio: audio.clone(),
                                 waveform: Arc::new(waveform),
                                 audio_offset: 0,
-                                name: segment_name,
+                                name: clip_name,
                             });
-                            segment_num += 1;
+                            clip_num += 1;
                         }
                     }
                 }
@@ -399,9 +399,9 @@ impl SequencerApp {
 
                         // Group segments by page
                         let max_page = track
-                            .segments()
+                            .clips()
                             .iter()
-                            .map(|segment| (segment.start_tick / ticks_per_bar) as usize)
+                            .map(|clip| (clip.start_tick / ticks_per_bar) as usize)
                             .max()
                             .unwrap_or(0);
 
@@ -410,17 +410,17 @@ impl SequencerApp {
                             track_state.pages.push([false; NUM_STEPS]);
                         }
 
-                        for segment in track.segments() {
-                            let page_idx = (segment.start_tick / ticks_per_bar) as usize;
+                        for clip in track.clips() {
+                            let page_idx = (clip.start_tick / ticks_per_bar) as usize;
                             let step_idx =
-                                ((segment.start_tick % ticks_per_bar) / ticks_per_step) as usize;
+                                ((clip.start_tick % ticks_per_bar) / ticks_per_step) as usize;
                             if page_idx < track_state.pages.len() && step_idx < NUM_STEPS {
                                 track_state.pages[page_idx][step_idx] = true;
 
                                 // Get the audio path from the session's audio_paths map
                                 if track_state.sample_path.is_none() {
                                     if let Some(audio_path) =
-                                        loaded_session.audio_paths().get(&segment.name)
+                                        loaded_session.audio_paths().get(&clip.name)
                                     {
                                         track_state.sample_path = Some(audio_path.clone());
                                         track_state.sample_name = audio_path
@@ -429,7 +429,7 @@ impl SequencerApp {
                                             .unwrap_or_else(|| "Unknown".to_string());
                                     }
                                     // Use the already-decoded audio from the segment
-                                    track_state.audio = Some(segment.audio.clone());
+                                    track_state.audio = Some(clip.audio.clone());
                                 }
                             }
                         }
@@ -491,7 +491,7 @@ impl SequencerApp {
                 Some(daw_core::TrackData {
                     id: track_idx as u64,
                     name: track.sample_name.clone(),
-                    segments,
+                    clips: segments,
                     volume: track.volume,
                     enabled: true,
                 })

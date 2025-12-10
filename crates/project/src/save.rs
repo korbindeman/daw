@@ -21,15 +21,15 @@ pub fn save_project(
             .map(|track| TrackData {
                 id: track.id.0,
                 name: track.name.clone(),
-                segments: track
-                    .segments()
+                clips: track
+                    .clips()
                     .iter()
-                    .map(|segment| SegmentData {
-                        name: segment.name.clone(),
-                        start_tick: segment.start_tick,
-                        end_tick: segment.end_tick,
-                        audio_offset: segment.audio_offset,
-                        audio_path: audio_paths.get(&segment.name).cloned().unwrap_or_default(),
+                    .map(|clip| SegmentData {
+                        name: clip.name.clone(),
+                        start_tick: clip.start_tick,
+                        end_tick: clip.end_tick,
+                        audio_offset: clip.audio_offset,
+                        audio_path: audio_paths.get(&clip.name).cloned().unwrap_or_default(),
                     })
                     .collect(),
                 volume: track.volume,
@@ -48,7 +48,7 @@ pub fn save_project(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use daw_transport::{AudioArc, Segment, Track, TrackId, WaveformData};
+    use daw_transport::{AudioArc, Clip, Track, TrackId, WaveformData};
     use std::collections::HashMap;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -60,7 +60,7 @@ mod tests {
 
         let mut track = Track::new(TrackId(1), "Test Track".to_string());
         track.volume = 0.9;
-        track.insert_segment(Segment {
+        track.insert_clip(Clip {
             start_tick: 0,
             end_tick: 960,
             audio: audio.clone(),
@@ -68,7 +68,7 @@ mod tests {
             audio_offset: 0,
             name: "Kick".to_string(),
         });
-        track.insert_segment(Segment {
+        track.insert_clip(Clip {
             start_tick: 960,
             end_tick: 1920,
             audio: audio.clone(),
@@ -129,7 +129,7 @@ mod tests {
         assert_eq!(loaded.tempo, 140.0);
         assert_eq!(loaded.time_signature, (3, 4));
         assert_eq!(loaded.tracks.len(), 1);
-        assert_eq!(loaded.tracks[0].segments.len(), 2);
+        assert_eq!(loaded.tracks[0].clips.len(), 2);
     }
 
     #[test]
@@ -163,13 +163,13 @@ mod tests {
         let waveform = Arc::new(WaveformData::from_audio_arc(&audio, 512));
 
         let mut track = Track::new(TrackId(1), "Missing Path Track".to_string());
-        track.insert_segment(Segment {
+        track.insert_clip(Clip {
             start_tick: 0,
             end_tick: 960,
             audio,
             waveform,
             audio_offset: 0,
-            name: "Missing Path Segment".to_string(),
+            name: "Missing Path Clip".to_string(),
         });
 
         save_project(
@@ -186,6 +186,6 @@ mod tests {
         let reader = std::io::BufReader::new(file);
         let loaded: crate::Project = serde_json::from_reader(reader).expect("decode");
 
-        assert_eq!(loaded.tracks[0].segments[0].audio_path, PathBuf::new());
+        assert_eq!(loaded.tracks[0].clips[0].audio_path, PathBuf::new());
     }
 }

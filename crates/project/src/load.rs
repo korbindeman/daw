@@ -1,5 +1,5 @@
 use crate::{Project, ProjectError};
-use daw_transport::{Segment, Track, TrackId, WaveformData};
+use daw_transport::{Clip, Track, TrackId, WaveformData};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -12,7 +12,7 @@ pub struct LoadedProject {
     pub tempo: f64,
     pub time_signature: (u32, u32),
     pub tracks: Vec<Track>,
-    /// Mapping from segment name to audio file path
+    /// Mapping from clip name to audio file path
     pub audio_paths: HashMap<String, std::path::PathBuf>,
     /// Audio cache used during loading (contains decoded and resampled audio)
     pub cache: daw_decode::AudioCache,
@@ -42,14 +42,14 @@ fn load_project_data(path: &Path) -> Result<Project, ProjectError> {
 pub fn load_project_metadata(path: &Path) -> Result<ProjectMetadata, ProjectError> {
     let project = load_project_data(path)?;
 
-    let segment_count: usize = project.tracks.iter().map(|t| t.segments.len()).sum();
+    let clip_count: usize = project.tracks.iter().map(|t| t.clips.len()).sum();
 
     Ok(ProjectMetadata {
         name: project.name,
         tempo: project.tempo,
         time_signature: project.time_signature,
         track_count: project.tracks.len(),
-        segment_count,
+        segment_count: clip_count,
     })
 }
 
@@ -72,25 +72,25 @@ pub fn load_project_with_sample_rate(
         track.volume = track_data.volume;
         track.enabled = track_data.enabled;
 
-        for segment_data in &track_data.segments {
+        for clip_data in &track_data.clips {
             let audio = cache
-                .get_or_load(&segment_data.audio_path, target_sample_rate)
+                .get_or_load(&clip_data.audio_path, target_sample_rate)
                 .map_err(|e| ProjectError::AudioDecode {
-                    path: segment_data.audio_path.clone(),
+                    path: clip_data.audio_path.clone(),
                     source: e,
                 })?;
 
-            audio_paths.insert(segment_data.name.clone(), segment_data.audio_path.clone());
+            audio_paths.insert(clip_data.name.clone(), clip_data.audio_path.clone());
 
             let waveform = WaveformData::from_audio_arc(&audio, 512);
 
-            track.insert_segment(Segment {
-                start_tick: segment_data.start_tick,
-                end_tick: segment_data.end_tick,
+            track.insert_clip(Clip {
+                start_tick: clip_data.start_tick,
+                end_tick: clip_data.end_tick,
                 audio,
                 waveform: Arc::new(waveform),
-                audio_offset: segment_data.audio_offset,
-                name: segment_data.name.clone(),
+                audio_offset: clip_data.audio_offset,
+                name: clip_data.name.clone(),
             });
         }
 
@@ -111,7 +111,7 @@ pub fn load_project_with_sample_rate(
 mod tests {
     use super::*;
     use crate::{Project, SegmentData, TrackData, save_project};
-    use daw_transport::{AudioArc, Segment, Track, TrackId, WaveformData};
+    use daw_transport::{AudioArc, Clip, Track, TrackId, WaveformData};
     use std::collections::HashMap;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -169,17 +169,17 @@ mod tests {
 
         let mut original_track = Track::new(TrackId(1), "Roundtrip Track".to_string());
         original_track.volume = 0.85;
-        original_track.insert_segment(Segment {
+        original_track.insert_clip(Clip {
             start_tick: 960,
             end_tick: 1920,
             audio,
             waveform,
             audio_offset: 0,
-            name: "Test Segment".to_string(),
+            name: "Test Clip".to_string(),
         });
 
         let mut audio_paths = HashMap::new();
-        audio_paths.insert("Test Segment".to_string(), audio_path.clone());
+        audio_paths.insert("Test Clip".to_string(), audio_path.clone());
 
         save_project(
             &project_path,
@@ -198,9 +198,9 @@ mod tests {
         assert_eq!(loaded.time_signature, (4, 4));
         assert_eq!(loaded.tracks.len(), 1);
         assert_eq!(loaded.tracks[0].id.0, 1);
-        assert_eq!(loaded.tracks[0].segments().len(), 1);
-        assert_eq!(loaded.tracks[0].segments()[0].start_tick, 960);
-        assert_eq!(loaded.tracks[0].segments()[0].end_tick, 1920);
+        assert_eq!(loaded.tracks[0].clips().len(), 1);
+        assert_eq!(loaded.tracks[0].clips()[0].start_tick, 960);
+        assert_eq!(loaded.tracks[0].clips()[0].end_tick, 1920);
     }
 
     #[test]
@@ -218,12 +218,12 @@ mod tests {
             tracks: vec![TrackData {
                 id: 1,
                 name: "Sample Track".to_string(),
-                segments: vec![SegmentData {
+                clips: vec![SegmentData {
                     start_tick: 0,
                     end_tick: 960,
                     audio_path: audio_path.clone(),
                     audio_offset: 0,
-                    name: "Sample Segment".to_string(),
+                    name: "Sample Clip".to_string(),
                 }],
                 volume: 1.0,
                 enabled: true,
@@ -236,11 +236,8 @@ mod tests {
 
         let loaded = load_project(&project_path).expect("load");
 
-        assert_eq!(loaded.tracks[0].segments()[0].start_tick, 0);
-        assert_eq!(
-            loaded.audio_paths.get("Sample Segment").unwrap(),
-            &audio_path
-        );
+        assert_eq!(loaded.tracks[0].clips()[0].start_tick, 0);
+        assert_eq!(loaded.audio_paths.get("Sample Clip").unwrap(), &audio_path);
     }
 
     #[test]
@@ -258,12 +255,12 @@ mod tests {
             tracks: vec![TrackData {
                 id: 1,
                 name: "Sample Track".to_string(),
-                segments: vec![SegmentData {
+                clips: vec![SegmentData {
                     start_tick: 0,
                     end_tick: 960,
                     audio_path: audio_path.clone(),
                     audio_offset: 0,
-                    name: "Sample Segment".to_string(),
+                    name: "Sample Clip".to_string(),
                 }],
                 volume: 1.0,
                 enabled: true,
@@ -278,7 +275,7 @@ mod tests {
         let loaded = load_project(&project_path).expect("load");
 
         assert_eq!(loaded.name, "Legacy MsgPack Test");
-        assert_eq!(loaded.tracks[0].segments()[0].start_tick, 0);
+        assert_eq!(loaded.tracks[0].clips()[0].start_tick, 0);
     }
 
     #[test]
@@ -293,12 +290,12 @@ mod tests {
             tracks: vec![TrackData {
                 id: 1,
                 name: "Missing Track".to_string(),
-                segments: vec![SegmentData {
+                clips: vec![SegmentData {
                     start_tick: 0,
                     end_tick: 960,
                     audio_path: PathBuf::from("nonexistent.wav"),
                     audio_offset: 0,
-                    name: "Missing Segment".to_string(),
+                    name: "Missing Clip".to_string(),
                 }],
                 volume: 1.0,
                 enabled: true,

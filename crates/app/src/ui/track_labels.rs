@@ -112,10 +112,10 @@ impl Render for TrackLabels {
                             .text_color(text_color.opacity(if enabled { 0.7 } else { 0.3 }))
                             .child(
                                 track
-                                    .segments()
+                                    .clips()
                                     .first()
-                                    .map(|_| format!("{} segment(s)", track.segments().len()))
-                                    .unwrap_or_else(|| "No segments".to_string()),
+                                    .map(|_| format!("{} clip(s)", track.clips().len()))
+                                    .unwrap_or_else(|| "No clips".to_string()),
                             ),
                     )
             }))

@@ -1,5 +1,5 @@
 use crate::theme::{ActiveTheme, to_dark_variant};
-use daw_core::{PPQN, Segment, Track as TransportTrack, WaveformData};
+use daw_core::{Clip, PPQN, Track as TransportTrack, WaveformData};
 use gpui::{
     Bounds, Context, CursorStyle, EventEmitter, Hsla, Point, Size, Window, canvas, div, fill,
     prelude::*, px,
@@ -9,11 +9,11 @@ use std::sync::Arc;
 const TRACK_HEIGHT: f32 = 80.0;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SegmentId(pub String);
+pub struct ClipId(pub String);
 
 #[derive(Debug)]
 pub enum TrackEvent {
-    SegmentClicked(SegmentId),
+    ClipClicked(ClipId),
     EmptySpaceClicked(f64), // pixel position clicked
 }
 
@@ -23,7 +23,7 @@ pub struct Track {
     track: TransportTrack,
     pixels_per_beat: f64,
     timeline_width: f64,
-    selected_segments: Vec<SegmentId>,
+    selected_clips: Vec<ClipId>,
 }
 
 impl Track {
@@ -37,12 +37,12 @@ impl Track {
             track,
             pixels_per_beat,
             timeline_width,
-            selected_segments: Vec::new(),
+            selected_clips: Vec::new(),
         }
     }
 
-    pub fn set_selected_segments(&mut self, selected_segments: Vec<SegmentId>) {
-        self.selected_segments = selected_segments;
+    pub fn set_selected_clips(&mut self, selected_clips: Vec<ClipId>) {
+        self.selected_clips = selected_clips;
     }
 }
 
@@ -54,34 +54,34 @@ impl Render for Track {
         // High contrast waveform: dark version of the track color (like #392838 vs #BE8CB9)
         let waveform_color = to_dark_variant(track_color);
 
-        let selected_segments = self.selected_segments.clone();
+        let selected_clips = self.selected_clips.clone();
 
-        // Create segments with bounds tracking for click detection
-        let segment_bounds: Vec<(f64, f64)> = self
+        // Create clips with bounds tracking for click detection
+        let clip_bounds: Vec<(f64, f64)> = self
             .track
-            .segments()
+            .clips()
             .iter()
-            .map(|segment| {
-                let start_px = (segment.start_tick as f64 / PPQN as f64) * self.pixels_per_beat;
-                let duration_ticks = segment.duration_ticks();
+            .map(|clip| {
+                let start_px = (clip.start_tick as f64 / PPQN as f64) * self.pixels_per_beat;
+                let duration_ticks = clip.duration_ticks();
                 let width_px = (duration_ticks as f64 / PPQN as f64) * self.pixels_per_beat;
                 (start_px, start_px + width_px)
             })
             .collect();
 
-        let segments: Vec<_> = self
+        let clips: Vec<_> = self
             .track
-            .segments()
+            .clips()
             .iter()
-            .map(|segment| {
-                let start_px = (segment.start_tick as f64 / PPQN as f64) * self.pixels_per_beat;
-                let duration_ticks = segment.duration_ticks();
+            .map(|clip| {
+                let start_px = (clip.start_tick as f64 / PPQN as f64) * self.pixels_per_beat;
+                let duration_ticks = clip.duration_ticks();
                 let width_px = (duration_ticks as f64 / PPQN as f64) * self.pixels_per_beat;
-                let segment_id = SegmentId(segment.name.clone());
-                let is_selected = selected_segments.contains(&segment_id);
+                let clip_id = ClipId(clip.name.clone());
+                let is_selected = selected_clips.contains(&clip_id);
 
-                render_segment(
-                    segment,
+                render_clip(
+                    clip,
                     start_px,
                     width_px,
                     track_color,
@@ -91,7 +91,7 @@ impl Render for Track {
                 .on_mouse_down(
                     gpui::MouseButton::Left,
                     cx.listener(move |_track, _event: &gpui::MouseDownEvent, _window, cx| {
-                        cx.emit(TrackEvent::SegmentClicked(segment_id.clone()));
+                        cx.emit(TrackEvent::ClipClicked(clip_id.clone()));
                     }),
                 )
             })
@@ -113,32 +113,32 @@ impl Render for Track {
                             let x_pos: f32 = event.position.x.into();
                             let x_pos_f64 = x_pos as f64;
 
-                            // Check if click is within any segment bounds
-                            let clicked_on_segment = segment_bounds
+                            // Check if click is within any clip bounds
+                            let clicked_on_clip = clip_bounds
                                 .iter()
                                 .any(|(start, end)| x_pos_f64 >= *start && x_pos_f64 <= *end);
 
-                            // Only emit empty space click if we didn't click on a segment
-                            if !clicked_on_segment {
+                            // Only emit empty space click if we didn't click on a clip
+                            if !clicked_on_clip {
                                 cx.emit(TrackEvent::EmptySpaceClicked(x_pos_f64));
                             }
                         }),
                     )
-                    .children(segments),
+                    .children(clips),
             )
     }
 }
 
-fn render_segment(
-    segment: &Segment,
+fn render_clip(
+    clip: &Clip,
     start_px: f64,
     width_px: f64,
     bg_color: Hsla,
     waveform_color: Hsla,
     is_selected: bool,
 ) -> gpui::Div {
-    let waveform = segment.waveform.clone();
-    let segment_name = segment.name.clone();
+    let waveform = clip.waveform.clone();
+    let clip_name = clip.name.clone();
 
     // When selected, flip the colors
     let (final_bg_color, final_waveform_color) = if is_selected {
@@ -172,7 +172,7 @@ fn render_segment(
                     div()
                         .text_xs()
                         .text_color(final_waveform_color)
-                        .child(segment_name),
+                        .child(clip_name),
                 ),
         )
         .child(

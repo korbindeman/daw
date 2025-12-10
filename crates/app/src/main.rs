@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use theme::ActiveTheme;
 use ui::{
-    Cursor, Header, HeaderEvent, Playhead, RulerEvent, SegmentId, TimelineRuler, Track, TrackEvent,
+    ClipId, Cursor, Header, HeaderEvent, Playhead, RulerEvent, TimelineRuler, Track, TrackEvent,
     TrackLabels, TrackLabelsEvent,
 };
 
@@ -32,7 +32,7 @@ struct Daw {
     track_entities: Vec<Entity<Track>>,
     focus_handle: FocusHandle,
     project_path: PathBuf,
-    selected_segments: Vec<SegmentId>,
+    selected_clips: Vec<ClipId>,
     last_tick: Option<u64>,
     config: Config,
     scroll_handle: gpui::ScrollHandle,
@@ -102,8 +102,8 @@ impl Daw {
             cx.subscribe(
                 track_entity,
                 |this, _track, event: &TrackEvent, cx| match event {
-                    TrackEvent::SegmentClicked(segment_id) => {
-                        this.toggle_segment_selection(segment_id.clone(), cx);
+                    TrackEvent::ClipClicked(clip_id) => {
+                        this.toggle_clip_selection(clip_id.clone(), cx);
                     }
                     TrackEvent::EmptySpaceClicked(x_pos) => {
                         this.handle_timeline_click(*x_pos, cx);
@@ -124,7 +124,7 @@ impl Daw {
             track_entities,
             focus_handle,
             project_path: path.to_path_buf(),
-            selected_segments: Vec::new(),
+            selected_clips: Vec::new(),
             last_tick: None,
             config: Config::load(),
             scroll_handle: gpui::ScrollHandle::new(),
@@ -147,7 +147,7 @@ impl Daw {
                 // Update session and project state
                 self.session = session;
                 self.project_path = path;
-                self.selected_segments.clear();
+                self.selected_clips.clear();
 
                 // Update header with new values
                 self.header_handle.update(cx, |header, cx| {
@@ -328,10 +328,10 @@ impl Daw {
         });
     }
 
-    fn toggle_segment_selection(&mut self, segment_id: SegmentId, cx: &mut Context<Self>) {
-        self.selected_segments.clear();
-        self.selected_segments.push(segment_id.clone());
-        self.update_track_selected_segments(cx);
+    fn toggle_clip_selection(&mut self, clip_id: ClipId, cx: &mut Context<Self>) {
+        self.selected_clips.clear();
+        self.selected_clips.push(clip_id.clone());
+        self.update_track_selected_clips(cx);
         cx.notify();
     }
 
@@ -365,8 +365,8 @@ impl Daw {
             cx.subscribe(
                 track_entity,
                 |this, _track, event: &TrackEvent, cx| match event {
-                    TrackEvent::SegmentClicked(segment_id) => {
-                        this.toggle_segment_selection(segment_id.clone(), cx);
+                    TrackEvent::ClipClicked(clip_id) => {
+                        this.toggle_clip_selection(clip_id.clone(), cx);
                     }
                     TrackEvent::EmptySpaceClicked(x_pos) => {
                         this.handle_timeline_click(*x_pos, cx);
@@ -379,11 +379,11 @@ impl Daw {
         self.track_entities = track_entities;
     }
 
-    fn update_track_selected_segments(&mut self, cx: &mut Context<Self>) {
-        let selected_segments = self.selected_segments.clone();
+    fn update_track_selected_clips(&mut self, cx: &mut Context<Self>) {
+        let selected_clips = self.selected_clips.clone();
         for track_entity in &self.track_entities {
             track_entity.update(cx, |track, cx| {
-                track.set_selected_segments(selected_segments.clone());
+                track.set_selected_clips(selected_clips.clone());
                 cx.notify();
             });
         }

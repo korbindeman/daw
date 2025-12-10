@@ -182,7 +182,7 @@ use daw_decode::{AudioCache, decode_audio_arc_direct, strip_samples_root};
 use daw_engine::{AudioEngineHandle, EngineClip, EngineCommand, EngineStatus, EngineTrack};
 use daw_project::save_project;
 use daw_render::{render_timeline, write_wav};
-use daw_transport::{AudioArc, PPQN, Segment, Track, TrackId};
+use daw_transport::{AudioArc, Clip, PPQN, Track, TrackId};
 
 /// Metronome samples and state
 pub struct Metronome {
@@ -279,7 +279,7 @@ pub struct Session {
     playback_state: PlaybackState,
     /// Cache for decoded and resampled audio
     cache: AudioCache,
-    /// Mapping from segment name to audio file path (relative to samples root)
+    /// Mapping from clip name to audio file path (relative to samples root)
     audio_paths: HashMap<String, PathBuf>,
     /// Path to the project file (if loaded from or saved to a file)
     project_path: Option<PathBuf>,
@@ -610,44 +610,44 @@ impl Session {
         })
     }
 
-    /// Calculate the maximum tick position across all segments
+    /// Calculate the maximum tick position across all clips
     fn calculate_max_tick(&self) -> u64 {
         let mut max_tick = 0u64;
         for track in &self.tracks {
-            for segment in track.segments() {
-                max_tick = max_tick.max(segment.end_tick);
+            for clip in track.clips() {
+                max_tick = max_tick.max(clip.end_tick);
             }
         }
         max_tick
     }
 
     fn convert_tracks_for_engine(&mut self, sample_rate: u32) -> Vec<EngineTrack> {
-        // Build engine tracks from segments, resampling audio if needed
-        // Note: Segments already have AudioArc, which makes cloning cheap
+        // Build engine tracks from clips, resampling audio if needed
+        // Note: Clips already have AudioArc, which makes cloning cheap
         self.tracks
             .iter()
             .filter(|track| track.enabled)
             .map(|track| EngineTrack {
                 clips: track
-                    .segments()
+                    .clips()
                     .iter()
-                    .filter_map(|segment| {
+                    .filter_map(|clip| {
                         // Resample audio if not at engine sample rate
                         // If already at target rate, this is just a cheap Arc clone
-                        let audio = if segment.audio.sample_rate() == sample_rate {
-                            segment.audio.clone()
+                        let audio = if clip.audio.sample_rate() == sample_rate {
+                            clip.audio.clone()
                         } else {
-                            segment.audio.resample(sample_rate).ok()?
+                            clip.audio.resample(sample_rate).ok()?
                         };
 
                         // Convert duration from ticks to samples
                         let length_samples =
-                            self.ticks_to_samples_with_rate(segment.duration_ticks(), sample_rate);
+                            self.ticks_to_samples_with_rate(clip.duration_ticks(), sample_rate);
 
                         Some(EngineClip {
-                            start: self.ticks_to_samples_with_rate(segment.start_tick, sample_rate),
+                            start: self.ticks_to_samples_with_rate(clip.start_tick, sample_rate),
                             audio,
-                            offset: segment.audio_offset,
+                            offset: clip.audio_offset,
                             length: Some(length_samples),
                         })
                     })
@@ -713,16 +713,16 @@ impl Session {
 
     // Track management methods
 
-    /// Replace all tracks. Track's insert_segment handles overlap resolution internally.
+    /// Replace all tracks. Track's insert_clip handles overlap resolution internally.
     pub fn set_tracks(&mut self, tracks: Vec<Track>) {
         self.tracks = tracks;
         self.send_tracks_to_engine(self.engine.sample_rate);
     }
 
-    /// Add a segment to a track. Overlaps are resolved automatically by Track.
-    pub fn add_segment(&mut self, track_id: TrackId, segment: Segment) {
+    /// Add a clip to a track. Overlaps are resolved automatically by Track.
+    pub fn add_clip(&mut self, track_id: TrackId, clip: Clip) {
         if let Some(track) = self.tracks.iter_mut().find(|t| t.id.0 == track_id.0) {
-            track.insert_segment(segment);
+            track.insert_clip(clip);
             self.send_tracks_to_engine(self.engine.sample_rate);
         }
     }

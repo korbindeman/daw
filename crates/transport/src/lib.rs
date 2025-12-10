@@ -360,10 +360,10 @@ impl WaveformData {
     }
 }
 
-/// A segment of audio on the timeline with explicit start and end positions.
-/// Segments are non-overlapping within a track - the Track enforces this invariant.
+/// A clip of audio on the timeline with explicit start and end positions.
+/// Clips are non-overlapping within a track - the Track enforces this invariant.
 #[derive(Debug, Clone)]
-pub struct Segment {
+pub struct Clip {
     pub start_tick: u64,
     pub end_tick: u64,
     pub audio: AudioArc,
@@ -374,8 +374,8 @@ pub struct Segment {
     pub name: String,
 }
 
-impl Segment {
-    /// Duration of this segment in ticks
+impl Clip {
+    /// Duration of this clip in ticks
     pub fn duration_ticks(&self) -> u64 {
         self.end_tick - self.start_tick
     }
@@ -385,9 +385,9 @@ impl Segment {
 pub struct Track {
     pub id: TrackId,
     pub name: String,
-    /// Segments are always sorted by start_tick and non-overlapping.
-    /// Use insert_segment() to add segments - it enforces the invariant.
-    segments: Vec<Segment>,
+    /// Clips are always sorted by start_tick and non-overlapping.
+    /// Use insert_clip() to add clips - it enforces the invariant.
+    clips: Vec<Clip>,
     pub volume: f32,
     pub enabled: bool,
 }
@@ -397,32 +397,32 @@ impl Track {
         Self {
             id,
             name,
-            segments: Vec::new(),
+            clips: Vec::new(),
             volume: 1.0,
             enabled: true,
         }
     }
 
-    /// Get read-only access to segments
-    pub fn segments(&self) -> &[Segment] {
-        &self.segments
+    /// Get read-only access to clips
+    pub fn clips(&self) -> &[Clip] {
+        &self.clips
     }
 
-    /// Clear all segments
-    pub fn clear_segments(&mut self) {
-        self.segments.clear();
+    /// Clear all clips
+    pub fn clear_clips(&mut self) {
+        self.clips.clear();
     }
 
-    /// Insert a segment, trimming/splitting/removing any overlapping segments.
-    /// The new segment takes priority - existing segments in its range are modified.
-    pub fn insert_segment(&mut self, new_seg: Segment) {
-        let new_start = new_seg.start_tick;
-        let new_end = new_seg.end_tick;
+    /// Insert a clip, trimming/splitting/removing any overlapping clips.
+    /// The new clip takes priority - existing clips in its range are modified.
+    pub fn insert_clip(&mut self, new_clip: Clip) {
+        let new_start = new_clip.start_tick;
+        let new_end = new_clip.end_tick;
 
-        // Process existing segments
-        let mut result: Vec<Segment> = Vec::new();
+        // Process existing clips
+        let mut result: Vec<Clip> = Vec::new();
 
-        for existing in self.segments.drain(..) {
+        for existing in self.clips.drain(..) {
             let ex_start = existing.start_tick;
             let ex_end = existing.end_tick;
 
@@ -437,7 +437,7 @@ impl Track {
                     // New is in the middle - split existing into two parts
 
                     // Left part: from ex_start to new_start
-                    let left = Segment {
+                    let left = Clip {
                         start_tick: ex_start,
                         end_tick: new_start,
                         audio: existing.audio.clone(),
@@ -457,7 +457,7 @@ impl Track {
                     let right_offset = existing.audio_offset
                         + ticks_to_samples_approx(ticks_into_audio, existing.audio.sample_rate());
 
-                    let right = Segment {
+                    let right = Clip {
                         start_tick: new_end,
                         end_tick: ex_end,
                         audio: existing.audio,
@@ -472,7 +472,7 @@ impl Track {
                     let trim_samples =
                         ticks_to_samples_approx(trim_ticks, existing.audio.sample_rate());
 
-                    let trimmed = Segment {
+                    let trimmed = Clip {
                         start_tick: new_end,
                         end_tick: ex_end,
                         audio: existing.audio,
@@ -486,7 +486,7 @@ impl Track {
                     }
                 } else {
                     // New covers the end - trim existing's end
-                    let trimmed = Segment {
+                    let trimmed = Clip {
                         start_tick: ex_start,
                         end_tick: new_start,
                         audio: existing.audio,
@@ -505,20 +505,20 @@ impl Track {
             }
         }
 
-        // Add the new segment
-        result.push(new_seg);
+        // Add the new clip
+        result.push(new_clip);
 
         // Sort by start_tick
         result.sort_by_key(|s| s.start_tick);
 
-        self.segments = result;
+        self.clips = result;
     }
 
-    /// Build from a list of segments, inserting each one (resolving overlaps)
-    pub fn from_segments(id: TrackId, name: String, segments: Vec<Segment>) -> Self {
+    /// Build from a list of clips, inserting each one (resolving overlaps)
+    pub fn from_clips(id: TrackId, name: String, clips: Vec<Clip>) -> Self {
         let mut track = Self::new(id, name);
-        for seg in segments {
-            track.insert_segment(seg);
+        for clip in clips {
+            track.insert_clip(clip);
         }
         track
     }

@@ -12,5 +12,5 @@ pub use header::{Header, HeaderEvent};
 pub use playhead::Playhead;
 pub use ruler::{RulerEvent, TimelineRuler};
 pub use sidebar::Sidebar;
-pub use track::{SegmentId, Track, TrackEvent};
+pub use track::{ClipId, Track, TrackEvent};
 pub use track_labels::{TrackLabels, TrackLabelsEvent};
