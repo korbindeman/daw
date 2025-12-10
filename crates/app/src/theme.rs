@@ -36,11 +36,11 @@ impl Theme {
             // Backgrounds - Gruvbox-inspired warm yellows/browns
             background: hsla(0.10, 0.15, 0.16, 1.0), // warm dark brown (gruvbox bg)
             surface: hsla(0.10, 0.12, 0.22, 1.0),    // lighter warm brown for sidebar/ruler
-            elevated: hsla(0.12, 0.08, 0.66, 1.0),   // warm beige/tan - timeline background
+            elevated: hsla(0.12, 0.08, 0.20, 1.0),   // warm dark brown - timeline background
             header: hsla(0.10, 0.10, 0.30, 1.0),     // warm medium brown for header
 
             // Borders
-            border: hsla(0.10, 0.08, 0.28, 0.5), // subtle warm brown border with transparency
+            border: hsla(0.10, 0.08, 0.45, 0.5), // lighter warm brown border with transparency
             border_focused: hsla(0.12, 0.45, 0.58, 1.0), // gruvbox yellow accent
 
             // Text
@@ -57,14 +57,14 @@ impl Theme {
 
             // Waveform color is derived in track.rs - Gruvbox palette
             track_colors: vec![
-                hsla(0.92, 0.38, 0.68, 1.0), // Gruvbox purple
-                hsla(0.58, 0.42, 0.65, 1.0), // Gruvbox blue
-                hsla(0.08, 0.68, 0.70, 1.0), // Gruvbox orange
-                hsla(0.12, 0.65, 0.72, 1.0), // Gruvbox yellow
-                hsla(0.35, 0.48, 0.62, 1.0), // Gruvbox green
-                hsla(0.48, 0.52, 0.66, 1.0), // Gruvbox aqua
-                hsla(0.02, 0.65, 0.64, 1.0), // Gruvbox red
-                hsla(0.85, 0.40, 0.70, 1.0), // Gruvbox magenta
+                hsla(0.92, 0.50, 0.55, 1.0), // Gruvbox purple - darker and richer
+                hsla(0.58, 0.55, 0.52, 1.0), // Gruvbox blue - darker and richer
+                hsla(0.08, 0.80, 0.58, 1.0), // Gruvbox orange - darker and richer
+                hsla(0.12, 0.78, 0.60, 1.0), // Gruvbox yellow - darker and richer
+                hsla(0.35, 0.60, 0.50, 1.0), // Gruvbox green - darker and richer
+                hsla(0.48, 0.65, 0.54, 1.0), // Gruvbox aqua - darker and richer
+                hsla(0.02, 0.78, 0.52, 1.0), // Gruvbox red - darker and richer
+                hsla(0.85, 0.52, 0.58, 1.0), // Gruvbox magenta - darker and richer
             ],
         }
     }

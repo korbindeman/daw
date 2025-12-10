@@ -100,7 +100,7 @@ impl Render for Track {
         div()
             .w(px(self.timeline_width as f32))
             .h(px(TRACK_HEIGHT))
-            .border_b_1()
+            .border_b_2()
             .border_color(theme.border)
             .child(
                 div()

@@ -62,7 +62,7 @@ impl Render for TrackLabels {
                 div()
                     .h(px(TRACK_HEIGHT))
                     .bg(bg_color)
-                    .border_b_1()
+                    .border_b_2()
                     .border_color(theme.border)
                     .border_l_1()
                     .px_1()
