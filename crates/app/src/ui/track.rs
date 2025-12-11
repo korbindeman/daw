@@ -1,8 +1,7 @@
 use crate::theme::{ActiveTheme, to_dark_variant};
-use daw_core::{Clip, PPQN, Track as TransportTrack, WaveformData};
+use daw_core::{PPQN, Track as TransportTrack, WaveformData};
 use gpui::{
-    Bounds, Context, CursorStyle, EventEmitter, Hsla, Point, Size, Window, canvas, div, fill,
-    prelude::*, px,
+    Bounds, Context, EventEmitter, Hsla, Point, Size, Window, canvas, div, fill, prelude::*, px,
 };
 use std::sync::Arc;
 
@@ -52,8 +51,6 @@ impl Render for Track {
         let theme = cx.theme();
         let track_index = self.track.id.0 as usize;
         let track_color = theme.track_colors[track_index % theme.track_colors.len()];
-        // High contrast waveform: dark version of the track color (like #392838 vs #BE8CB9)
-        let waveform_color = to_dark_variant(track_color);
 
         let selected_clips = self.selected_clips.clone();
 
@@ -84,20 +81,70 @@ impl Render for Track {
                 let clip_id = ClipId(clip.name.clone());
                 let is_selected = selected_clips.contains(&clip_id);
 
-                render_clip(
-                    clip,
-                    start_px,
-                    width_px,
-                    track_color,
-                    waveform_color,
-                    is_selected,
-                )
-                .on_mouse_down(
-                    gpui::MouseButton::Left,
-                    cx.listener(move |_track, _event: &gpui::MouseDownEvent, _window, cx| {
-                        cx.emit(TrackEvent::ClipClicked(clip_id.clone()));
-                    }),
-                )
+                // Create the clip element
+                let waveform = clip.waveform.clone();
+                let clip_name = clip.name.clone();
+
+                // When selected, flip the colors
+                let (final_bg_color, final_waveform_color) = if is_selected {
+                    (to_dark_variant(track_color), track_color)
+                } else {
+                    (track_color, to_dark_variant(track_color))
+                };
+
+                div()
+                    .absolute()
+                    .left(px(start_px as f32))
+                    .top(px(4.))
+                    .w(px(width_px as f32))
+                    .h(px(72.))
+                    .bg(final_bg_color)
+                    .border_1()
+                    .border_color(darken(final_bg_color, 0.2))
+                    .overflow_hidden()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        // Clickable label bar at the top
+                        div()
+                            .w_full()
+                            .h(px(16.))
+                            .bg(darken(final_bg_color, 0.1))
+                            .px_1()
+                            .flex()
+                            .cursor_grab()
+                            .items_center()
+                            .on_mouse_down(
+                                gpui::MouseButton::Left,
+                                cx.listener(
+                                    move |_track, _event: &gpui::MouseDownEvent, _window, cx| {
+                                        cx.emit(TrackEvent::ClipClicked(clip_id.clone()));
+                                    },
+                                ),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(final_waveform_color)
+                                    .child(clip_name),
+                            ),
+                    )
+                    .child(
+                        // Waveform area - clicks pass through to move the cursor
+                        div()
+                            .flex_1()
+                            .w_full()
+                            .on_mouse_down(
+                                gpui::MouseButton::Left,
+                                cx.listener(
+                                    move |_track, event: &gpui::MouseDownEvent, _window, cx| {
+                                        let x_pos: f32 = event.position.x.into();
+                                        cx.emit(TrackEvent::EmptySpaceClicked(x_pos as f64));
+                                    },
+                                ),
+                            )
+                            .child(render_waveform(waveform, final_waveform_color)),
+                    )
             })
             .collect();
 
@@ -148,61 +195,6 @@ impl Render for Track {
                     .children(clips),
             )
     }
-}
-
-fn render_clip(
-    clip: &Clip,
-    start_px: f64,
-    width_px: f64,
-    bg_color: Hsla,
-    waveform_color: Hsla,
-    is_selected: bool,
-) -> gpui::Div {
-    let waveform = clip.waveform.clone();
-    let clip_name = clip.name.clone();
-
-    // When selected, flip the colors
-    let (final_bg_color, final_waveform_color) = if is_selected {
-        (waveform_color, bg_color)
-    } else {
-        (bg_color, waveform_color)
-    };
-
-    div()
-        .absolute()
-        .left(px(start_px as f32))
-        .top(px(4.))
-        .w(px(width_px as f32))
-        .h(px(72.))
-        .bg(final_bg_color)
-        .border_1()
-        .border_color(darken(final_bg_color, 0.2))
-        .overflow_hidden()
-        .flex()
-        .flex_col()
-        .child(
-            // Clickable label bar at the top
-            div()
-                .w_full()
-                .h(px(16.))
-                .bg(darken(final_bg_color, 0.1))
-                .px_1()
-                .flex()
-                .items_center()
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(final_waveform_color)
-                        .child(clip_name),
-                ),
-        )
-        .child(
-            // Waveform area
-            div()
-                .flex_1()
-                .w_full()
-                .child(render_waveform(waveform, final_waveform_color)),
-        )
 }
 
 fn render_waveform(waveform: Arc<WaveformData>, color: Hsla) -> impl IntoElement {
