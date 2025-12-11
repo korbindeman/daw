@@ -1,6 +1,6 @@
 {
   "name": "present_tense",
-  "tempo": 80.0,
+  "tempo": 90.0,
   "time_signature": [
     4,
     4
@@ -26,7 +26,7 @@
         },
         {
           "start_tick": 960,
-          "end_tick": 1689,
+          "end_tick": 1684,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 3"
@@ -47,7 +47,7 @@
         },
         {
           "start_tick": 2880,
-          "end_tick": 3609,
+          "end_tick": 3604,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 6"
@@ -68,7 +68,7 @@
         },
         {
           "start_tick": 4800,
-          "end_tick": 5529,
+          "end_tick": 5524,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 9"
@@ -89,7 +89,7 @@
         },
         {
           "start_tick": 6720,
-          "end_tick": 7449,
+          "end_tick": 7444,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 12"
@@ -110,7 +110,7 @@
         },
         {
           "start_tick": 8640,
-          "end_tick": 9369,
+          "end_tick": 9364,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 15"
@@ -131,7 +131,7 @@
         },
         {
           "start_tick": 10560,
-          "end_tick": 11289,
+          "end_tick": 11284,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 18"
@@ -152,7 +152,7 @@
         },
         {
           "start_tick": 12480,
-          "end_tick": 13209,
+          "end_tick": 13204,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 21"
@@ -173,7 +173,7 @@
         },
         {
           "start_tick": 14400,
-          "end_tick": 15129,
+          "end_tick": 15124,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 24"
@@ -194,7 +194,7 @@
         },
         {
           "start_tick": 16320,
-          "end_tick": 17049,
+          "end_tick": 17044,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 27"
@@ -215,7 +215,7 @@
         },
         {
           "start_tick": 18240,
-          "end_tick": 18969,
+          "end_tick": 18964,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 30"
@@ -236,7 +236,7 @@
         },
         {
           "start_tick": 20160,
-          "end_tick": 20889,
+          "end_tick": 20884,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 33"
@@ -257,7 +257,7 @@
         },
         {
           "start_tick": 22080,
-          "end_tick": 22809,
+          "end_tick": 22804,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 36"
@@ -278,7 +278,7 @@
         },
         {
           "start_tick": 24000,
-          "end_tick": 24729,
+          "end_tick": 24724,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 39"
@@ -299,7 +299,7 @@
         },
         {
           "start_tick": 25920,
-          "end_tick": 26649,
+          "end_tick": 26644,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 42"
@@ -320,7 +320,7 @@
         },
         {
           "start_tick": 27840,
-          "end_tick": 28569,
+          "end_tick": 28564,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 45"
@@ -341,7 +341,7 @@
         },
         {
           "start_tick": 29760,
-          "end_tick": 30489,
+          "end_tick": 30484,
           "audio_path": "cr78/kick-accent.wav",
           "audio_offset": 0,
           "name": "kick-accent 48"
@@ -358,168 +358,168 @@
       "clips": [
         {
           "start_tick": 480,
-          "end_tick": 769,
+          "end_tick": 763,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 1"
         },
         {
           "start_tick": 1440,
-          "end_tick": 1729,
+          "end_tick": 1723,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 2"
         },
         {
           "start_tick": 2400,
-          "end_tick": 2689,
+          "end_tick": 2683,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 3"
         },
         {
           "start_tick": 3360,
-          "end_tick": 3649,
+          "end_tick": 3643,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 4"
         },
         {
           "start_tick": 4320,
-          "end_tick": 4609,
+          "end_tick": 4603,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 5"
         },
         {
           "start_tick": 5280,
-          "end_tick": 5569,
+          "end_tick": 5563,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 6"
         },
         {
           "start_tick": 6240,
-          "end_tick": 6529,
+          "end_tick": 6523,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 7"
         },
         {
           "start_tick": 7200,
-          "end_tick": 7489,
+          "end_tick": 7483,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 8"
         },
         {
           "start_tick": 8160,
-          "end_tick": 8449,
+          "end_tick": 8443,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 9"
         },
         {
           "start_tick": 9120,
-          "end_tick": 9409,
+          "end_tick": 9403,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 10"
         },
         {
           "start_tick": 10080,
-          "end_tick": 10369,
+          "end_tick": 10363,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 11"
         },
         {
           "start_tick": 11040,
-          "end_tick": 11329,
+          "end_tick": 11323,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 12"
         },
         {
           "start_tick": 15840,
-          "end_tick": 16129,
+          "end_tick": 16123,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 13"
         },
         {
           "start_tick": 16800,
-          "end_tick": 17089,
+          "end_tick": 17083,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 14"
         },
         {
           "start_tick": 17760,
-          "end_tick": 18049,
+          "end_tick": 18043,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 15"
         },
         {
           "start_tick": 18720,
-          "end_tick": 19009,
+          "end_tick": 19003,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 16"
         },
         {
           "start_tick": 19680,
-          "end_tick": 19969,
+          "end_tick": 19963,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 17"
         },
         {
           "start_tick": 20640,
-          "end_tick": 20929,
+          "end_tick": 20923,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 18"
         },
         {
           "start_tick": 21600,
-          "end_tick": 21889,
+          "end_tick": 21883,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 19"
         },
         {
           "start_tick": 22560,
-          "end_tick": 22849,
+          "end_tick": 22843,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 20"
         },
         {
           "start_tick": 23520,
-          "end_tick": 23809,
+          "end_tick": 23803,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 21"
         },
         {
           "start_tick": 24480,
-          "end_tick": 24769,
+          "end_tick": 24763,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 22"
         },
         {
           "start_tick": 25440,
-          "end_tick": 25729,
+          "end_tick": 25723,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 23"
         },
         {
           "start_tick": 26400,
-          "end_tick": 26689,
+          "end_tick": 26683,
           "audio_path": "cr78/hihat-metal.wav",
           "audio_offset": 0,
           "name": "hihat-metal 24"
@@ -543,7 +543,7 @@
         },
         {
           "start_tick": 1680,
-          "end_tick": 2489,
+          "end_tick": 2484,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 2"
@@ -557,7 +557,7 @@
         },
         {
           "start_tick": 3600,
-          "end_tick": 4409,
+          "end_tick": 4404,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 4"
@@ -571,7 +571,7 @@
         },
         {
           "start_tick": 5520,
-          "end_tick": 6329,
+          "end_tick": 6324,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 6"
@@ -585,7 +585,7 @@
         },
         {
           "start_tick": 7440,
-          "end_tick": 8249,
+          "end_tick": 8244,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 8"
@@ -599,7 +599,7 @@
         },
         {
           "start_tick": 9360,
-          "end_tick": 10169,
+          "end_tick": 10164,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 10"
@@ -613,7 +613,7 @@
         },
         {
           "start_tick": 11280,
-          "end_tick": 12089,
+          "end_tick": 12084,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 12"
@@ -627,7 +627,7 @@
         },
         {
           "start_tick": 13200,
-          "end_tick": 14009,
+          "end_tick": 14004,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 14"
@@ -641,7 +641,7 @@
         },
         {
           "start_tick": 15120,
-          "end_tick": 15929,
+          "end_tick": 15924,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 16"
@@ -655,7 +655,7 @@
         },
         {
           "start_tick": 17040,
-          "end_tick": 17849,
+          "end_tick": 17844,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 18"
@@ -669,7 +669,7 @@
         },
         {
           "start_tick": 18960,
-          "end_tick": 19769,
+          "end_tick": 19764,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 20"
@@ -683,7 +683,7 @@
         },
         {
           "start_tick": 20880,
-          "end_tick": 21689,
+          "end_tick": 21684,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 22"
@@ -697,7 +697,7 @@
         },
         {
           "start_tick": 22800,
-          "end_tick": 23609,
+          "end_tick": 23604,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 24"
@@ -711,7 +711,7 @@
         },
         {
           "start_tick": 24720,
-          "end_tick": 25529,
+          "end_tick": 25524,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 26"
@@ -725,7 +725,7 @@
         },
         {
           "start_tick": 26640,
-          "end_tick": 27449,
+          "end_tick": 27444,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 28"
@@ -739,7 +739,7 @@
         },
         {
           "start_tick": 28560,
-          "end_tick": 29369,
+          "end_tick": 29364,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 30"
@@ -753,7 +753,7 @@
         },
         {
           "start_tick": 30480,
-          "end_tick": 31289,
+          "end_tick": 31284,
           "audio_path": "cr78/conga-l.wav",
           "audio_offset": 0,
           "name": "conga-l 32"
@@ -770,896 +770,896 @@
       "clips": [
         {
           "start_tick": 0,
-          "end_tick": 71,
+          "end_tick": 66,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 1"
         },
         {
           "start_tick": 240,
-          "end_tick": 311,
+          "end_tick": 306,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 2"
         },
         {
           "start_tick": 480,
-          "end_tick": 551,
+          "end_tick": 546,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 3"
         },
         {
           "start_tick": 720,
-          "end_tick": 791,
+          "end_tick": 786,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 4"
         },
         {
           "start_tick": 960,
-          "end_tick": 1031,
+          "end_tick": 1026,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 5"
         },
         {
           "start_tick": 1200,
-          "end_tick": 1271,
+          "end_tick": 1266,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 6"
         },
         {
           "start_tick": 1440,
-          "end_tick": 1511,
+          "end_tick": 1506,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 7"
         },
         {
           "start_tick": 1680,
-          "end_tick": 1751,
+          "end_tick": 1746,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 8"
         },
         {
           "start_tick": 1920,
-          "end_tick": 1991,
+          "end_tick": 1986,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 9"
         },
         {
           "start_tick": 2160,
-          "end_tick": 2231,
+          "end_tick": 2226,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 10"
         },
         {
           "start_tick": 2400,
-          "end_tick": 2471,
+          "end_tick": 2466,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 11"
         },
         {
           "start_tick": 2640,
-          "end_tick": 2711,
+          "end_tick": 2706,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 12"
         },
         {
           "start_tick": 2880,
-          "end_tick": 2951,
+          "end_tick": 2946,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 13"
         },
         {
           "start_tick": 3120,
-          "end_tick": 3191,
+          "end_tick": 3186,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 14"
         },
         {
           "start_tick": 3360,
-          "end_tick": 3431,
+          "end_tick": 3426,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 15"
         },
         {
           "start_tick": 3600,
-          "end_tick": 3671,
+          "end_tick": 3666,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 16"
         },
         {
           "start_tick": 3840,
-          "end_tick": 3911,
+          "end_tick": 3906,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 17"
         },
         {
           "start_tick": 4080,
-          "end_tick": 4151,
+          "end_tick": 4146,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 18"
         },
         {
           "start_tick": 4320,
-          "end_tick": 4391,
+          "end_tick": 4386,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 19"
         },
         {
           "start_tick": 4560,
-          "end_tick": 4631,
+          "end_tick": 4626,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 20"
         },
         {
           "start_tick": 4800,
-          "end_tick": 4871,
+          "end_tick": 4866,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 21"
         },
         {
           "start_tick": 5040,
-          "end_tick": 5111,
+          "end_tick": 5106,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 22"
         },
         {
           "start_tick": 5280,
-          "end_tick": 5351,
+          "end_tick": 5346,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 23"
         },
         {
           "start_tick": 5520,
-          "end_tick": 5591,
+          "end_tick": 5586,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 24"
         },
         {
           "start_tick": 5760,
-          "end_tick": 5831,
+          "end_tick": 5826,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 25"
         },
         {
           "start_tick": 6000,
-          "end_tick": 6071,
+          "end_tick": 6066,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 26"
         },
         {
           "start_tick": 6240,
-          "end_tick": 6311,
+          "end_tick": 6306,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 27"
         },
         {
           "start_tick": 6480,
-          "end_tick": 6551,
+          "end_tick": 6546,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 28"
         },
         {
           "start_tick": 6720,
-          "end_tick": 6791,
+          "end_tick": 6786,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 29"
         },
         {
           "start_tick": 6960,
-          "end_tick": 7031,
+          "end_tick": 7026,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 30"
         },
         {
           "start_tick": 7200,
-          "end_tick": 7271,
+          "end_tick": 7266,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 31"
         },
         {
           "start_tick": 7440,
-          "end_tick": 7511,
+          "end_tick": 7506,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 32"
         },
         {
           "start_tick": 7680,
-          "end_tick": 7751,
+          "end_tick": 7746,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 33"
         },
         {
           "start_tick": 7920,
-          "end_tick": 7991,
+          "end_tick": 7986,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 34"
         },
         {
           "start_tick": 8160,
-          "end_tick": 8231,
+          "end_tick": 8226,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 35"
         },
         {
           "start_tick": 8400,
-          "end_tick": 8471,
+          "end_tick": 8466,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 36"
         },
         {
           "start_tick": 8640,
-          "end_tick": 8711,
+          "end_tick": 8706,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 37"
         },
         {
           "start_tick": 8880,
-          "end_tick": 8951,
+          "end_tick": 8946,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 38"
         },
         {
           "start_tick": 9120,
-          "end_tick": 9191,
+          "end_tick": 9186,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 39"
         },
         {
           "start_tick": 9360,
-          "end_tick": 9431,
+          "end_tick": 9426,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 40"
         },
         {
           "start_tick": 9600,
-          "end_tick": 9671,
+          "end_tick": 9666,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 41"
         },
         {
           "start_tick": 9840,
-          "end_tick": 9911,
+          "end_tick": 9906,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 42"
         },
         {
           "start_tick": 10080,
-          "end_tick": 10151,
+          "end_tick": 10146,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 43"
         },
         {
           "start_tick": 10320,
-          "end_tick": 10391,
+          "end_tick": 10386,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 44"
         },
         {
           "start_tick": 10560,
-          "end_tick": 10631,
+          "end_tick": 10626,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 45"
         },
         {
           "start_tick": 10800,
-          "end_tick": 10871,
+          "end_tick": 10866,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 46"
         },
         {
           "start_tick": 11040,
-          "end_tick": 11111,
+          "end_tick": 11106,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 47"
         },
         {
           "start_tick": 11280,
-          "end_tick": 11351,
+          "end_tick": 11346,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 48"
         },
         {
           "start_tick": 11520,
-          "end_tick": 11591,
+          "end_tick": 11586,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 49"
         },
         {
           "start_tick": 11760,
-          "end_tick": 11831,
+          "end_tick": 11826,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 50"
         },
         {
           "start_tick": 12000,
-          "end_tick": 12071,
+          "end_tick": 12066,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 51"
         },
         {
           "start_tick": 12240,
-          "end_tick": 12311,
+          "end_tick": 12306,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 52"
         },
         {
           "start_tick": 12480,
-          "end_tick": 12551,
+          "end_tick": 12546,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 53"
         },
         {
           "start_tick": 12720,
-          "end_tick": 12791,
+          "end_tick": 12786,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 54"
         },
         {
           "start_tick": 12960,
-          "end_tick": 13031,
+          "end_tick": 13026,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 55"
         },
         {
           "start_tick": 13200,
-          "end_tick": 13271,
+          "end_tick": 13266,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 56"
         },
         {
           "start_tick": 13440,
-          "end_tick": 13511,
+          "end_tick": 13506,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 57"
         },
         {
           "start_tick": 13680,
-          "end_tick": 13751,
+          "end_tick": 13746,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 58"
         },
         {
           "start_tick": 13920,
-          "end_tick": 13991,
+          "end_tick": 13986,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 59"
         },
         {
           "start_tick": 14160,
-          "end_tick": 14231,
+          "end_tick": 14226,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 60"
         },
         {
           "start_tick": 14400,
-          "end_tick": 14471,
+          "end_tick": 14466,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 61"
         },
         {
           "start_tick": 14640,
-          "end_tick": 14711,
+          "end_tick": 14706,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 62"
         },
         {
           "start_tick": 14880,
-          "end_tick": 14951,
+          "end_tick": 14946,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 63"
         },
         {
           "start_tick": 15120,
-          "end_tick": 15191,
+          "end_tick": 15186,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 64"
         },
         {
           "start_tick": 15360,
-          "end_tick": 15431,
+          "end_tick": 15426,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 65"
         },
         {
           "start_tick": 15600,
-          "end_tick": 15671,
+          "end_tick": 15666,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 66"
         },
         {
           "start_tick": 15840,
-          "end_tick": 15911,
+          "end_tick": 15906,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 67"
         },
         {
           "start_tick": 16080,
-          "end_tick": 16151,
+          "end_tick": 16146,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 68"
         },
         {
           "start_tick": 16320,
-          "end_tick": 16391,
+          "end_tick": 16386,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 69"
         },
         {
           "start_tick": 16560,
-          "end_tick": 16631,
+          "end_tick": 16626,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 70"
         },
         {
           "start_tick": 16800,
-          "end_tick": 16871,
+          "end_tick": 16866,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 71"
         },
         {
           "start_tick": 17040,
-          "end_tick": 17111,
+          "end_tick": 17106,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 72"
         },
         {
           "start_tick": 17280,
-          "end_tick": 17351,
+          "end_tick": 17346,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 73"
         },
         {
           "start_tick": 17520,
-          "end_tick": 17591,
+          "end_tick": 17586,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 74"
         },
         {
           "start_tick": 17760,
-          "end_tick": 17831,
+          "end_tick": 17826,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 75"
         },
         {
           "start_tick": 18000,
-          "end_tick": 18071,
+          "end_tick": 18066,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 76"
         },
         {
           "start_tick": 18240,
-          "end_tick": 18311,
+          "end_tick": 18306,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 77"
         },
         {
           "start_tick": 18480,
-          "end_tick": 18551,
+          "end_tick": 18546,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 78"
         },
         {
           "start_tick": 18720,
-          "end_tick": 18791,
+          "end_tick": 18786,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 79"
         },
         {
           "start_tick": 18960,
-          "end_tick": 19031,
+          "end_tick": 19026,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 80"
         },
         {
           "start_tick": 19200,
-          "end_tick": 19271,
+          "end_tick": 19266,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 81"
         },
         {
           "start_tick": 19440,
-          "end_tick": 19511,
+          "end_tick": 19506,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 82"
         },
         {
           "start_tick": 19680,
-          "end_tick": 19751,
+          "end_tick": 19746,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 83"
         },
         {
           "start_tick": 19920,
-          "end_tick": 19991,
+          "end_tick": 19986,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 84"
         },
         {
           "start_tick": 20160,
-          "end_tick": 20231,
+          "end_tick": 20226,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 85"
         },
         {
           "start_tick": 20400,
-          "end_tick": 20471,
+          "end_tick": 20466,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 86"
         },
         {
           "start_tick": 20640,
-          "end_tick": 20711,
+          "end_tick": 20706,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 87"
         },
         {
           "start_tick": 20880,
-          "end_tick": 20951,
+          "end_tick": 20946,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 88"
         },
         {
           "start_tick": 21120,
-          "end_tick": 21191,
+          "end_tick": 21186,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 89"
         },
         {
           "start_tick": 21360,
-          "end_tick": 21431,
+          "end_tick": 21426,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 90"
         },
         {
           "start_tick": 21600,
-          "end_tick": 21671,
+          "end_tick": 21666,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 91"
         },
         {
           "start_tick": 21840,
-          "end_tick": 21911,
+          "end_tick": 21906,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 92"
         },
         {
           "start_tick": 22080,
-          "end_tick": 22151,
+          "end_tick": 22146,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 93"
         },
         {
           "start_tick": 22320,
-          "end_tick": 22391,
+          "end_tick": 22386,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 94"
         },
         {
           "start_tick": 22560,
-          "end_tick": 22631,
+          "end_tick": 22626,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 95"
         },
         {
           "start_tick": 22800,
-          "end_tick": 22871,
+          "end_tick": 22866,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 96"
         },
         {
           "start_tick": 23040,
-          "end_tick": 23111,
+          "end_tick": 23106,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 97"
         },
         {
           "start_tick": 23280,
-          "end_tick": 23351,
+          "end_tick": 23346,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 98"
         },
         {
           "start_tick": 23520,
-          "end_tick": 23591,
+          "end_tick": 23586,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 99"
         },
         {
           "start_tick": 23760,
-          "end_tick": 23831,
+          "end_tick": 23826,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 100"
         },
         {
           "start_tick": 24000,
-          "end_tick": 24071,
+          "end_tick": 24066,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 101"
         },
         {
           "start_tick": 24240,
-          "end_tick": 24311,
+          "end_tick": 24306,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 102"
         },
         {
           "start_tick": 24480,
-          "end_tick": 24551,
+          "end_tick": 24546,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 103"
         },
         {
           "start_tick": 24720,
-          "end_tick": 24791,
+          "end_tick": 24786,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 104"
         },
         {
           "start_tick": 24960,
-          "end_tick": 25031,
+          "end_tick": 25026,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 105"
         },
         {
           "start_tick": 25200,
-          "end_tick": 25271,
+          "end_tick": 25266,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 106"
         },
         {
           "start_tick": 25440,
-          "end_tick": 25511,
+          "end_tick": 25506,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 107"
         },
         {
           "start_tick": 25680,
-          "end_tick": 25751,
+          "end_tick": 25746,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 108"
         },
         {
           "start_tick": 25920,
-          "end_tick": 25991,
+          "end_tick": 25986,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 109"
         },
         {
           "start_tick": 26160,
-          "end_tick": 26231,
+          "end_tick": 26226,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 110"
         },
         {
           "start_tick": 26400,
-          "end_tick": 26471,
+          "end_tick": 26466,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 111"
         },
         {
           "start_tick": 26640,
-          "end_tick": 26711,
+          "end_tick": 26706,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 112"
         },
         {
           "start_tick": 26880,
-          "end_tick": 26951,
+          "end_tick": 26946,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 113"
         },
         {
           "start_tick": 27120,
-          "end_tick": 27191,
+          "end_tick": 27186,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 114"
         },
         {
           "start_tick": 27360,
-          "end_tick": 27431,
+          "end_tick": 27426,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 115"
         },
         {
           "start_tick": 27600,
-          "end_tick": 27671,
+          "end_tick": 27666,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 116"
         },
         {
           "start_tick": 27840,
-          "end_tick": 27911,
+          "end_tick": 27906,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 117"
         },
         {
           "start_tick": 28080,
-          "end_tick": 28151,
+          "end_tick": 28146,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 118"
         },
         {
           "start_tick": 28320,
-          "end_tick": 28391,
+          "end_tick": 28386,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 119"
         },
         {
           "start_tick": 28560,
-          "end_tick": 28631,
+          "end_tick": 28626,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 120"
         },
         {
           "start_tick": 28800,
-          "end_tick": 28871,
+          "end_tick": 28866,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 121"
         },
         {
           "start_tick": 29040,
-          "end_tick": 29111,
+          "end_tick": 29106,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 122"
         },
         {
           "start_tick": 29280,
-          "end_tick": 29351,
+          "end_tick": 29346,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 123"
         },
         {
           "start_tick": 29520,
-          "end_tick": 29591,
+          "end_tick": 29586,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 124"
         },
         {
           "start_tick": 29760,
-          "end_tick": 29831,
+          "end_tick": 29826,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 125"
         },
         {
           "start_tick": 30000,
-          "end_tick": 30071,
+          "end_tick": 30066,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 126"
         },
         {
           "start_tick": 30240,
-          "end_tick": 30311,
+          "end_tick": 30306,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 127"
         },
         {
           "start_tick": 30480,
-          "end_tick": 30551,
+          "end_tick": 30546,
           "audio_path": "cr78/hihat.wav",
           "audio_offset": 0,
           "name": "hihat 128"
@@ -1683,7 +1683,7 @@
         },
         {
           "start_tick": 13200,
-          "end_tick": 13448,
+          "end_tick": 13442,
           "audio_path": "cr78/bongo-h.wav",
           "audio_offset": 0,
           "name": "bongo-h 2"
@@ -1697,7 +1697,7 @@
         },
         {
           "start_tick": 15120,
-          "end_tick": 15368,
+          "end_tick": 15362,
           "audio_path": "cr78/bongo-h.wav",
           "audio_offset": 0,
           "name": "bongo-h 4"
@@ -1711,7 +1711,7 @@
         },
         {
           "start_tick": 28560,
-          "end_tick": 28808,
+          "end_tick": 28802,
           "audio_path": "cr78/bongo-h.wav",
           "audio_offset": 0,
           "name": "bongo-h 6"
@@ -1725,7 +1725,7 @@
         },
         {
           "start_tick": 30480,
-          "end_tick": 30728,
+          "end_tick": 30722,
           "audio_path": "cr78/bongo-h.wav",
           "audio_offset": 0,
           "name": "bongo-h 8"

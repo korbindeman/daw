@@ -112,7 +112,11 @@ impl Daw {
                         this.toggle_clip_selection(clip_id.clone(), cx);
                     }
                     TrackEvent::EmptySpaceClicked(x_pos) => {
+                        this.deselect_all_clips(cx);
                         this.handle_timeline_click(*x_pos, cx);
+                    }
+                    TrackEvent::EmptySpaceRightClicked => {
+                        // Right-click on empty space - do nothing for now
                     }
                 },
             )
@@ -336,6 +340,12 @@ impl Daw {
         cx.notify();
     }
 
+    fn deselect_all_clips(&mut self, cx: &mut Context<Self>) {
+        self.selected_clips.clear();
+        self.update_track_selected_clips(cx);
+        cx.notify();
+    }
+
     fn update_track_labels(&mut self, cx: &mut Context<Self>) {
         let tracks = self.session.tracks().to_vec();
         self.track_labels_handle.update(cx, |track_labels, cx| {
@@ -370,7 +380,11 @@ impl Daw {
                         this.toggle_clip_selection(clip_id.clone(), cx);
                     }
                     TrackEvent::EmptySpaceClicked(x_pos) => {
+                        this.deselect_all_clips(cx);
                         this.handle_timeline_click(*x_pos, cx);
+                    }
+                    TrackEvent::EmptySpaceRightClicked => {
+                        // Right-click on empty space - do nothing for now
                     }
                 },
             )

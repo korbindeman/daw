@@ -15,6 +15,7 @@ pub struct ClipId(pub String);
 pub enum TrackEvent {
     ClipClicked(ClipId),
     EmptySpaceClicked(f64), // pixel position clicked
+    EmptySpaceRightClicked,
 }
 
 impl EventEmitter<TrackEvent> for Track {}
@@ -69,6 +70,9 @@ impl Render for Track {
             })
             .collect();
 
+        // Clone for the right-click handler
+        let clip_bounds_right = clip_bounds.clone();
+
         let clips: Vec<_> = self
             .track
             .clips()
@@ -121,6 +125,23 @@ impl Render for Track {
                             // Only emit empty space click if we didn't click on a clip
                             if !clicked_on_clip {
                                 cx.emit(TrackEvent::EmptySpaceClicked(x_pos_f64));
+                            }
+                        }),
+                    )
+                    .on_mouse_down(
+                        gpui::MouseButton::Right,
+                        cx.listener(move |_track, event: &gpui::MouseDownEvent, _window, cx| {
+                            let x_pos: f32 = event.position.x.into();
+                            let x_pos_f64 = x_pos as f64;
+
+                            // Check if click is within any clip bounds
+                            let clicked_on_clip = clip_bounds_right
+                                .iter()
+                                .any(|(start, end)| x_pos_f64 >= *start && x_pos_f64 <= *end);
+
+                            // Only emit empty space right click if we didn't click on a clip
+                            if !clicked_on_clip {
+                                cx.emit(TrackEvent::EmptySpaceRightClicked);
                             }
                         }),
                     )
