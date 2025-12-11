@@ -13,6 +13,7 @@ pub struct TrackLabels {
 
 pub enum TrackLabelsEvent {
     ToggleEnabled(u64),
+    SoloExclusive(u64),
 }
 
 impl EventEmitter<TrackLabelsEvent> for TrackLabels {}
@@ -51,6 +52,7 @@ impl Render for TrackLabels {
                 let text_color = to_dark_variant(track_color);
                 let track_id = track.id.0;
                 let enabled = track.enabled;
+                let solo = track.solo;
 
                 // Dim the background color when disabled
                 let bg_color = if enabled {
@@ -91,6 +93,37 @@ impl Render for TrackLabels {
                                         gpui::MouseButton::Left,
                                         cx.listener(move |_this, _event, _window, cx| {
                                             cx.emit(TrackLabelsEvent::ToggleEnabled(track_id));
+                                        }),
+                                    ),
+                            )
+                            .child(
+                                // Solo button
+                                div()
+                                    .id(("track-solo", i))
+                                    .w(px(16.))
+                                    .h(px(16.))
+                                    .rounded(px(2.))
+                                    .border_1()
+                                    .border_color(text_color.opacity(0.5))
+                                    .bg(if solo {
+                                        gpui::hsla(51.0 / 360.0, 1.0, 0.5, 1.0) // Gold color when soloed
+                                    } else {
+                                        gpui::hsla(0.0, 0.0, 0.0, 0.0)
+                                    })
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_xs()
+                                    .text_color(if solo {
+                                        gpui::hsla(0.0, 0.0, 0.0, 1.0) // Black text when soloed
+                                    } else {
+                                        text_color.opacity(0.7)
+                                    })
+                                    .child("S")
+                                    .on_mouse_down(
+                                        gpui::MouseButton::Left,
+                                        cx.listener(move |_this, _event, _window, cx| {
+                                            cx.emit(TrackLabelsEvent::SoloExclusive(track_id));
                                         }),
                                     ),
                             )

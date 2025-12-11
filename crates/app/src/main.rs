@@ -82,6 +82,11 @@ impl Daw {
                     this.update_track_labels(cx);
                     cx.notify();
                 }
+                TrackLabelsEvent::SoloExclusive(track_id) => {
+                    this.session.solo_track_exclusive(*track_id);
+                    this.update_track_labels(cx);
+                    cx.notify();
+                }
             },
         )
         .detach();
@@ -309,14 +314,9 @@ impl Daw {
     }
 
     fn handle_timeline_click(&mut self, x_pos: f64, cx: &mut Context<Self>) {
-        // x_pos is viewport-relative, need to subtract scroll offset to get content position
-        // (scroll_x is negative when scrolled right)
-        let scroll_offset = self.scroll_handle.offset();
-        let scroll_x: f32 = scroll_offset.x.into();
-        let content_x = x_pos - scroll_x as f64;
-
+        // x_pos is already content-relative from the Track component
         // Convert pixel position to ticks
-        let tick = self.session.time_context().pixels_to_ticks(content_x);
+        let tick = self.session.time_context().pixels_to_ticks(x_pos);
 
         // Set cursor in session (will apply snapping)
         self.session.set_cursor(tick);
@@ -660,14 +660,12 @@ impl Render for Daw {
                                                     .w_full()
                                                     .h_full()
                                                     .relative()
-                                                    .on_mouse_down(
-                                                        gpui::MouseButton::Left,
-                                                        cx.listener(|this, event: &gpui::MouseDownEvent, _window, cx| {
-                                                            let x_pos: f32 = event.position.x.into();
-                                                            this.handle_timeline_click(x_pos as f64, cx);
-                                                        }),
-                                                    )
-                                                    .child(self.render_grid_lines(pixels_per_beat, time_signature, timeline_width, cx))
+                                                    .child(self.render_grid_lines(
+                                                        pixels_per_beat,
+                                                        time_signature,
+                                                        timeline_width,
+                                                        cx,
+                                                    ))
                                                     .children(self.track_entities.iter().cloned())
                                                     .child(self.cursor_handle.clone())
                                                     .child(self.playhead_handle.clone()),

@@ -1,4 +1,4 @@
-use crate::{Project, ProjectError, SegmentData, TrackData};
+use crate::{ClipData, Project, ProjectError, TrackData};
 use daw_transport::Track;
 use std::fs::File;
 use std::io::BufWriter;
@@ -24,7 +24,7 @@ pub fn save_project(
                 clips: track
                     .clips()
                     .iter()
-                    .map(|clip| SegmentData {
+                    .map(|clip| ClipData {
                         name: clip.name.clone(),
                         start_tick: clip.start_tick,
                         end_tick: clip.end_tick,
@@ -33,7 +33,9 @@ pub fn save_project(
                     })
                     .collect(),
                 volume: track.volume,
+                pan: track.pan,
                 enabled: track.enabled,
+                solo: track.solo,
             })
             .collect(),
     };

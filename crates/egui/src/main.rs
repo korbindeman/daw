@@ -493,7 +493,9 @@ impl SequencerApp {
                     name: track.sample_name.clone(),
                     clips: segments,
                     volume: track.volume,
+                    pan: 0.0,
                     enabled: true,
+                    solo: false,
                 })
             })
             .collect();

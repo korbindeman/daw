@@ -70,7 +70,9 @@ pub fn load_project_with_sample_rate(
     for track_data in &project.tracks {
         let mut track = Track::new(TrackId(track_data.id), track_data.name.clone());
         track.volume = track_data.volume;
+        track.pan = track_data.pan;
         track.enabled = track_data.enabled;
+        track.solo = track_data.solo;
 
         for clip_data in &track_data.clips {
             let audio = cache
@@ -110,7 +112,7 @@ pub fn load_project_with_sample_rate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Project, SegmentData, TrackData, save_project};
+    use crate::{ClipData, Project, TrackData, save_project};
     use daw_transport::{AudioArc, Clip, Track, TrackId, WaveformData};
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -218,7 +220,7 @@ mod tests {
             tracks: vec![TrackData {
                 id: 1,
                 name: "Sample Track".to_string(),
-                clips: vec![SegmentData {
+                clips: vec![ClipData {
                     start_tick: 0,
                     end_tick: 960,
                     audio_path: audio_path.clone(),
@@ -226,7 +228,9 @@ mod tests {
                     name: "Sample Clip".to_string(),
                 }],
                 volume: 1.0,
+                pan: 0.0,
                 enabled: true,
+                solo: false,
             }],
         };
 
@@ -255,7 +259,7 @@ mod tests {
             tracks: vec![TrackData {
                 id: 1,
                 name: "Sample Track".to_string(),
-                clips: vec![SegmentData {
+                clips: vec![ClipData {
                     start_tick: 0,
                     end_tick: 960,
                     audio_path: audio_path.clone(),
@@ -263,7 +267,9 @@ mod tests {
                     name: "Sample Clip".to_string(),
                 }],
                 volume: 1.0,
+                pan: 0.0,
                 enabled: true,
+                solo: false,
             }],
         };
 
@@ -290,7 +296,7 @@ mod tests {
             tracks: vec![TrackData {
                 id: 1,
                 name: "Missing Track".to_string(),
-                clips: vec![SegmentData {
+                clips: vec![ClipData {
                     start_tick: 0,
                     end_tick: 960,
                     audio_path: PathBuf::from("nonexistent.wav"),
@@ -298,7 +304,9 @@ mod tests {
                     name: "Missing Clip".to_string(),
                 }],
                 volume: 1.0,
+                pan: 0.0,
                 enabled: true,
+                solo: false,
             }],
         };
 

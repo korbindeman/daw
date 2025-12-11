@@ -23,7 +23,9 @@ pub struct TrackData {
     pub name: String,
     pub clips: Vec<ClipData>,
     pub volume: f32,
+    pub pan: f32,
     pub enabled: bool,
+    pub solo: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,9 +36,6 @@ pub struct ClipData {
     pub audio_offset: u64,
     pub name: String,
 }
-
-// Keep SegmentData as an alias for backwards compatibility with old project files
-pub type SegmentData = ClipData;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -87,7 +86,9 @@ mod tests {
                         },
                     ],
                     volume: 1.0,
+                    pan: 0.0,
                     enabled: true,
+                    solo: false,
                 },
                 TrackData {
                     id: 2,
@@ -100,7 +101,9 @@ mod tests {
                         name: "Hi-Hat".to_string(),
                     }],
                     volume: 0.8,
+                    pan: 0.0,
                     enabled: true,
+                    solo: false,
                 },
             ],
         }
@@ -132,7 +135,9 @@ mod tests {
                 name: "Test".to_string(),
             }],
             volume: 0.75,
+            pan: 0.0,
             enabled: true,
+            solo: false,
         };
 
         let json = serde_json::to_string(&track).expect("serialize");
@@ -190,7 +195,9 @@ mod tests {
             name: "Empty Track".to_string(),
             clips: vec![],
             volume: 1.0,
+            pan: 0.0,
             enabled: true,
+            solo: false,
         };
 
         let json = serde_json::to_string(&track).expect("serialize");

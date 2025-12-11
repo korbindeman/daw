@@ -624,9 +624,21 @@ impl Session {
     fn convert_tracks_for_engine(&mut self, sample_rate: u32) -> Vec<EngineTrack> {
         // Build engine tracks from clips, resampling audio if needed
         // Note: Clips already have AudioArc, which makes cloning cheap
+        let any_soloed = self.tracks.iter().any(|t| t.solo);
+
         self.tracks
             .iter()
-            .filter(|track| track.enabled)
+            .filter(|track| {
+                // Track must be enabled
+                if !track.enabled {
+                    return false;
+                }
+                // If any track is soloed, only play soloed tracks
+                if any_soloed && !track.solo {
+                    return false;
+                }
+                true
+            })
             .map(|track| EngineTrack {
                 clips: track
                     .clips()
@@ -814,6 +826,61 @@ impl Session {
             track.enabled = !track.enabled;
             self.send_tracks_to_engine(self.engine.sample_rate);
         }
+    }
+
+    // Track pan controls
+
+    pub fn set_track_pan(&mut self, track_id: u64, pan: f32) {
+        if let Some(track) = self.tracks.iter_mut().find(|t| t.id.0 == track_id) {
+            track.pan = pan.clamp(-1.0, 1.0);
+            self.send_tracks_to_engine(self.engine.sample_rate);
+        }
+    }
+
+    // Track solo controls
+
+    pub fn set_track_solo(&mut self, track_id: u64, solo: bool) {
+        if let Some(track) = self.tracks.iter_mut().find(|t| t.id.0 == track_id) {
+            track.solo = solo;
+            self.send_tracks_to_engine(self.engine.sample_rate);
+        }
+    }
+
+    pub fn toggle_track_solo(&mut self, track_id: u64) {
+        if let Some(track) = self.tracks.iter_mut().find(|t| t.id.0 == track_id) {
+            track.solo = !track.solo;
+            self.send_tracks_to_engine(self.engine.sample_rate);
+        }
+    }
+
+    /// Returns true if any track is soloed
+    pub fn any_track_soloed(&self) -> bool {
+        self.tracks.iter().any(|t| t.solo)
+    }
+
+    /// Exclusively solo a track - unsolos all other tracks and solos the specified one.
+    /// If the track is already the only soloed track, unsolos it.
+    pub fn solo_track_exclusive(&mut self, track_id: u64) {
+        let is_only_soloed = self
+            .tracks
+            .iter()
+            .all(|t| (t.id.0 == track_id && t.solo) || !t.solo);
+        let is_this_soloed = self
+            .tracks
+            .iter()
+            .find(|t| t.id.0 == track_id)
+            .map(|t| t.solo)
+            .unwrap_or(false);
+
+        for track in &mut self.tracks {
+            if track.id.0 == track_id {
+                // Toggle off if it's the only soloed track, otherwise solo it
+                track.solo = !(is_only_soloed && is_this_soloed);
+            } else {
+                track.solo = false;
+            }
+        }
+        self.send_tracks_to_engine(self.engine.sample_rate);
     }
 
     // Cursor and snapping methods

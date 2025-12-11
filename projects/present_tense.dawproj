@@ -1,6 +1,6 @@
 {
-  "name": "Present Tense",
-  "tempo": 90.0,
+  "name": "present_tense",
+  "tempo": 80.0,
   "time_signature": [
     4,
     4
@@ -9,7 +9,7 @@
     {
       "id": 0,
       "name": "kick-accent",
-      "segments": [
+      "clips": [
         {
           "start_tick": 0,
           "end_tick": 720,
@@ -348,12 +348,14 @@
         }
       ],
       "volume": 1.0,
-      "enabled": true
+      "pan": 0.0,
+      "enabled": true,
+      "solo": false
     },
     {
       "id": 1,
       "name": "hihat-metal",
-      "segments": [
+      "clips": [
         {
           "start_tick": 480,
           "end_tick": 769,
@@ -524,12 +526,14 @@
         }
       ],
       "volume": 1.0,
-      "enabled": true
+      "pan": 0.0,
+      "enabled": true,
+      "solo": false
     },
     {
       "id": 2,
       "name": "conga-l",
-      "segments": [
+      "clips": [
         {
           "start_tick": 1440,
           "end_tick": 1680,
@@ -756,12 +760,14 @@
         }
       ],
       "volume": 1.0,
-      "enabled": true
+      "pan": 0.0,
+      "enabled": true,
+      "solo": false
     },
     {
       "id": 3,
       "name": "hihat",
-      "segments": [
+      "clips": [
         {
           "start_tick": 0,
           "end_tick": 71,
@@ -1660,71 +1666,75 @@
         }
       ],
       "volume": 0.05,
-      "enabled": true
+      "pan": 0.0,
+      "enabled": true,
+      "solo": false
     },
     {
       "id": 4,
       "name": "bongo-h",
-      "segments": [
+      "clips": [
         {
-          "start_tick": 12240,
-          "end_tick": 12480,
+          "start_tick": 12960,
+          "end_tick": 13200,
           "audio_path": "cr78/bongo-h.wav",
           "audio_offset": 0,
           "name": "bongo-h 1"
         },
         {
-          "start_tick": 12480,
-          "end_tick": 12728,
+          "start_tick": 13200,
+          "end_tick": 13448,
           "audio_path": "cr78/bongo-h.wav",
           "audio_offset": 0,
           "name": "bongo-h 2"
         },
         {
-          "start_tick": 14160,
-          "end_tick": 14400,
+          "start_tick": 14880,
+          "end_tick": 15120,
           "audio_path": "cr78/bongo-h.wav",
           "audio_offset": 0,
           "name": "bongo-h 3"
         },
         {
-          "start_tick": 14400,
-          "end_tick": 14648,
+          "start_tick": 15120,
+          "end_tick": 15368,
           "audio_path": "cr78/bongo-h.wav",
           "audio_offset": 0,
           "name": "bongo-h 4"
         },
         {
-          "start_tick": 27600,
-          "end_tick": 27840,
+          "start_tick": 28320,
+          "end_tick": 28560,
           "audio_path": "cr78/bongo-h.wav",
           "audio_offset": 0,
           "name": "bongo-h 5"
         },
         {
-          "start_tick": 27840,
-          "end_tick": 28088,
+          "start_tick": 28560,
+          "end_tick": 28808,
           "audio_path": "cr78/bongo-h.wav",
           "audio_offset": 0,
           "name": "bongo-h 6"
         },
         {
-          "start_tick": 29520,
-          "end_tick": 29760,
+          "start_tick": 30240,
+          "end_tick": 30480,
           "audio_path": "cr78/bongo-h.wav",
           "audio_offset": 0,
           "name": "bongo-h 7"
         },
         {
-          "start_tick": 29760,
-          "end_tick": 30008,
+          "start_tick": 30480,
+          "end_tick": 30728,
           "audio_path": "cr78/bongo-h.wav",
           "audio_offset": 0,
           "name": "bongo-h 8"
         }
       ],
       "volume": 1.0,
-      "enabled": true
+      "pan": 0.0,
+      "enabled": true,
+      "solo": false
     }
   ]
 }

@@ -389,7 +389,9 @@ pub struct Track {
     /// Use insert_clip() to add clips - it enforces the invariant.
     clips: Vec<Clip>,
     pub volume: f32,
+    pub pan: f32,
     pub enabled: bool,
+    pub solo: bool,
 }
 
 impl Track {
@@ -399,7 +401,9 @@ impl Track {
             name,
             clips: Vec::new(),
             volume: 1.0,
+            pan: 0.0,
             enabled: true,
+            solo: false,
         }
     }
 
