@@ -113,7 +113,28 @@ impl Daw {
                     }
                     TrackEvent::EmptySpaceClicked(x_pos) => {
                         this.deselect_all_clips(cx);
-                        this.handle_timeline_click(*x_pos, cx);
+
+                        // IMPORTANT: Scroll offset correction for cursor positioning
+                        // ========================================================
+                        // Mouse click positions from UI elements are relative to the visible viewport,
+                        // but we need absolute timeline coordinates to set the cursor correctly.
+                        //
+                        // Key insight: scroll_offset.x is NEGATIVE when scrolled right.
+                        // - When scroll_offset.x = 0: viewport shows timeline start (no scroll)
+                        // - When scroll_offset.x = -1000: viewport is scrolled 1000px to the right
+                        //
+                        // To convert viewport-relative position to absolute timeline position:
+                        //   absolute_x = viewport_x - scroll_offset.x
+                        //
+                        // Example: Click at viewport position 500, scrolled 1000px right (offset = -1000)
+                        //   absolute_x = 500 - (-1000) = 1500 ✓
+                        //
+                        // Common mistake: Using + instead of - will make cursor position worse when scrolled!
+                        let scroll_offset = this.scroll_handle.offset();
+                        let scroll_x: f32 = scroll_offset.x.into();
+                        let absolute_x = x_pos - scroll_x as f64;
+
+                        this.handle_timeline_click(absolute_x, cx);
                     }
                     TrackEvent::EmptySpaceRightClicked => {
                         // Right-click on empty space - do nothing for now
@@ -319,7 +340,7 @@ impl Daw {
     }
 
     fn handle_timeline_click(&mut self, x_pos: f64, cx: &mut Context<Self>) {
-        // x_pos is already content-relative from the Track component
+        // x_pos is absolute timeline position (scroll offset already applied)
         // Convert pixel position to ticks
         let tick = self.session.time_context().pixels_to_ticks(x_pos);
 
@@ -381,7 +402,28 @@ impl Daw {
                     }
                     TrackEvent::EmptySpaceClicked(x_pos) => {
                         this.deselect_all_clips(cx);
-                        this.handle_timeline_click(*x_pos, cx);
+
+                        // IMPORTANT: Scroll offset correction for cursor positioning
+                        // ========================================================
+                        // Mouse click positions from UI elements are relative to the visible viewport,
+                        // but we need absolute timeline coordinates to set the cursor correctly.
+                        //
+                        // Key insight: scroll_offset.x is NEGATIVE when scrolled right.
+                        // - When scroll_offset.x = 0: viewport shows timeline start (no scroll)
+                        // - When scroll_offset.x = -1000: viewport is scrolled 1000px to the right
+                        //
+                        // To convert viewport-relative position to absolute timeline position:
+                        //   absolute_x = viewport_x - scroll_offset.x
+                        //
+                        // Example: Click at viewport position 500, scrolled 1000px right (offset = -1000)
+                        //   absolute_x = 500 - (-1000) = 1500 ✓
+                        //
+                        // Common mistake: Using + instead of - will make cursor position worse when scrolled!
+                        let scroll_offset = this.scroll_handle.offset();
+                        let scroll_x: f32 = scroll_offset.x.into();
+                        let absolute_x = x_pos - scroll_x as f64;
+
+                        this.handle_timeline_click(absolute_x, cx);
                     }
                     TrackEvent::EmptySpaceRightClicked => {
                         // Right-click on empty space - do nothing for now
