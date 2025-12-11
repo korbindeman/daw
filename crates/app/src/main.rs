@@ -22,6 +22,7 @@ use ui::{
 
 // UI Layout Constants
 const TRACK_LABEL_WIDTH: f32 = 150.0;
+const SCROLL_SENSITIVITY: f32 = 12.0;
 
 struct Daw {
     session: Session,
@@ -654,6 +655,14 @@ impl Render for Daw {
                                             .flex_1()
                                             .overflow_scroll()
                                             .track_scroll(&self.scroll_handle)
+                                            .on_scroll_wheel(cx.listener(|this, event: &gpui::ScrollWheelEvent, _window, cx| {
+                                                // Convert vertical scroll to horizontal scroll
+                                                let delta = event.delta.pixel_delta(px(1.0));
+                                                let current_offset = this.scroll_handle.offset();
+                                                let scroll_amount = delta.y * SCROLL_SENSITIVITY;
+                                                this.scroll_handle.set_offset(gpui::Point::new(current_offset.x + scroll_amount, current_offset.y));
+                                                cx.notify();
+                                            }))
                                             .child(
                                                 div()
                                                     .min_w(px(timeline_width as f32))
