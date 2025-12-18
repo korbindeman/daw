@@ -4,7 +4,7 @@ members = [
     "crates/app", "crates/core",
     "crates/decode", "crates/egui",
     "crates/engine", "crates/project", "crates/render",
-    "crates/transport"
+    "crates/tauri/src-tauri", "crates/transport"
 ]
 
 [workspace.package]

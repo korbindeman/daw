@@ -6,7 +6,7 @@ mod ui;
 
 use app_menus::{OpenProject, RenderProject, SaveProject, SaveProjectAs, app_menus};
 use config::Config;
-use daw_core::Session;
+use daw_core::{PPQN, Session};
 use gpui::{
     App, Application, Context, Entity, FocusHandle, Timer, Window, WindowOptions, actions, div,
     prelude::*, px,
@@ -23,6 +23,32 @@ use ui::{
 // UI Layout Constants
 const TRACK_LABEL_WIDTH: f32 = 150.0;
 const SCROLL_SENSITIVITY: f32 = 12.0;
+
+// UI Zoom/Layout Constants (owned by the UI, not core)
+const DEFAULT_PIXELS_PER_BEAT: f64 = 100.0;
+const MIN_TIMELINE_WIDTH: f64 = 1200.0;
+
+/// Convert ticks to pixels using the current zoom level.
+/// This is a UI-only calculation - core doesn't know about pixels.
+fn ticks_to_pixels(ticks: u64, pixels_per_beat: f64) -> f64 {
+    let beats = ticks as f64 / PPQN as f64;
+    beats * pixels_per_beat
+}
+
+/// Convert pixels to ticks using the current zoom level.
+/// This is a UI-only calculation - core doesn't know about pixels.
+fn pixels_to_ticks(pixels: f64, pixels_per_beat: f64) -> u64 {
+    let beats = pixels / pixels_per_beat;
+    (beats * PPQN as f64) as u64
+}
+
+/// Calculate the timeline width in pixels based on content and zoom level.
+/// Adds padding (4 beats) and enforces a minimum width.
+fn calculate_timeline_width(max_tick: u64, pixels_per_beat: f64) -> f64 {
+    let end_with_padding = max_tick + (PPQN * 4);
+    let content_width = ticks_to_pixels(end_with_padding, pixels_per_beat);
+    content_width.max(MIN_TIMELINE_WIDTH)
+}
 
 struct Daw {
     session: Session,
@@ -69,7 +95,8 @@ impl Daw {
         )
         .detach();
 
-        let pixels_per_beat = session.time_context().pixels_per_beat;
+        // UI-owned zoom state (not from core)
+        let pixels_per_beat = DEFAULT_PIXELS_PER_BEAT;
         let playhead = cx.new(|_| Playhead::new(0, pixels_per_beat));
         let cursor = cx.new(|_| Cursor::new(Some(0), pixels_per_beat)); // Initialize at tick 0
 
@@ -92,8 +119,8 @@ impl Daw {
         )
         .detach();
 
-        // Create track entities
-        let timeline_width = session.calculate_timeline_width();
+        // Create track entities (timeline_width computed from max_tick)
+        let timeline_width = calculate_timeline_width(session.max_tick(), pixels_per_beat);
         let track_entities: Vec<_> = tracks
             .iter()
             .map(|track| {
@@ -341,8 +368,8 @@ impl Daw {
 
     fn handle_timeline_click(&mut self, x_pos: f64, cx: &mut Context<Self>) {
         // x_pos is absolute timeline position (scroll offset already applied)
-        // Convert pixel position to ticks
-        let tick = self.session.time_context().pixels_to_ticks(x_pos);
+        // Convert pixel position to ticks using UI-local helper
+        let tick = pixels_to_ticks(x_pos, DEFAULT_PIXELS_PER_BEAT);
 
         // Set cursor in session (will apply snapping)
         self.session.set_cursor(tick);
@@ -377,9 +404,9 @@ impl Daw {
 
     fn recreate_track_entities(&mut self, cx: &mut Context<Self>) {
         let tracks = self.session.tracks().to_vec();
-        let pixels_per_beat = self.session.time_context().pixels_per_beat;
+        let pixels_per_beat = DEFAULT_PIXELS_PER_BEAT;
         let tempo = self.session.tempo();
-        let timeline_width = self.session.calculate_timeline_width();
+        let timeline_width = calculate_timeline_width(self.session.max_tick(), pixels_per_beat);
 
         // Clear old track entities
         self.track_entities.clear();
@@ -534,10 +561,10 @@ impl Render for Daw {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
 
-        let timeline_width = self.session.calculate_timeline_width();
-        let time_ctx = self.session.time_context();
-        let pixels_per_beat = time_ctx.pixels_per_beat;
-        let time_signature = time_ctx.time_signature;
+        // UI-owned zoom/layout state
+        let pixels_per_beat = DEFAULT_PIXELS_PER_BEAT;
+        let timeline_width = calculate_timeline_width(self.session.max_tick(), pixels_per_beat);
+        let time_signature = self.session.time_signature();
 
         let header_handle = self.header_handle.clone();
 

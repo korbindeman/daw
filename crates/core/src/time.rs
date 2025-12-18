@@ -41,19 +41,31 @@ impl From<TimeSignature> for (u32, u32) {
     }
 }
 
+/// Musical time context for tempo-aware conversions.
+///
+/// `TimeContext` handles all conversions between musical time units (ticks, beats, bars)
+/// and physical time units (seconds, samples). It is intentionally free of any UI/pixel
+/// concerns - frontends should maintain their own zoom state (pixels_per_beat) and
+/// compute pixel positions from beats.
+///
+/// # Time Units
+///
+/// - **Ticks**: Smallest unit, PPQN ticks per quarter note (beat)
+/// - **Beats**: Quarter notes, tempo-dependent duration
+/// - **Bars**: Groups of beats determined by time signature
+/// - **Seconds**: Physical time
+/// - **Samples**: Audio samples at a given sample rate
 #[derive(Debug, Clone, Copy)]
 pub struct TimeContext {
     pub tempo: f64,
     pub time_signature: TimeSignature,
-    pub pixels_per_beat: f64,
 }
 
 impl TimeContext {
-    pub fn new(tempo: f64, time_signature: impl Into<TimeSignature>, pixels_per_beat: f64) -> Self {
+    pub fn new(tempo: f64, time_signature: impl Into<TimeSignature>) -> Self {
         Self {
             tempo,
             time_signature: time_signature.into(),
-            pixels_per_beat,
         }
     }
 
@@ -72,15 +84,6 @@ impl TimeContext {
 
     pub fn bars_to_ticks(&self, bars: f64) -> u64 {
         let beats = bars * self.time_signature.beats_per_bar() as f64;
-        self.beats_to_ticks(beats)
-    }
-
-    pub fn ticks_to_pixels(&self, ticks: u64) -> f64 {
-        self.ticks_to_beats(ticks) * self.pixels_per_beat
-    }
-
-    pub fn pixels_to_ticks(&self, pixels: f64) -> u64 {
-        let beats = pixels / self.pixels_per_beat;
         self.beats_to_ticks(beats)
     }
 
@@ -122,7 +125,7 @@ impl TimeContext {
 
 impl Default for TimeContext {
     fn default() -> Self {
-        Self::new(120.0, TimeSignature::default(), 100.0)
+        Self::new(120.0, TimeSignature::default())
     }
 }
 
@@ -145,7 +148,7 @@ mod tests {
 
     #[test]
     fn test_ticks_samples_roundtrip() {
-        let ctx = TimeContext::new(120.0, (4, 4), 100.0);
+        let ctx = TimeContext::new(120.0, (4, 4));
         let sample_rate = 44100;
 
         // Test various tick values
@@ -168,7 +171,7 @@ mod tests {
     fn test_ticks_to_samples_known_values() {
         // At 120 BPM: 1 beat = 0.5 seconds, 1 tick = 0.5/960 seconds
         // At 44100 Hz: 1 beat = 22050 samples
-        let ctx = TimeContext::new(120.0, (4, 4), 100.0);
+        let ctx = TimeContext::new(120.0, (4, 4));
         let sample_rate = 44100;
 
         // 1 beat (PPQN ticks) should equal 22050 samples
@@ -182,7 +185,7 @@ mod tests {
 
     #[test]
     fn test_samples_to_ticks_known_values() {
-        let ctx = TimeContext::new(120.0, (4, 4), 100.0);
+        let ctx = TimeContext::new(120.0, (4, 4));
         let sample_rate = 44100;
 
         // 22050 samples should equal 1 beat (PPQN ticks) at 120 BPM
@@ -199,7 +202,7 @@ mod tests {
         let sample_rate = 44100;
 
         // At 60 BPM: 1 beat = 1 second = 44100 samples
-        let ctx_60 = TimeContext::new(60.0, (4, 4), 100.0);
+        let ctx_60 = TimeContext::new(60.0, (4, 4));
         let samples_60 = ctx_60.ticks_to_samples(PPQN, sample_rate);
         assert_eq!(
             samples_60, 44100,
@@ -207,7 +210,7 @@ mod tests {
         );
 
         // At 120 BPM: 1 beat = 0.5 seconds = 22050 samples
-        let ctx_120 = TimeContext::new(120.0, (4, 4), 100.0);
+        let ctx_120 = TimeContext::new(120.0, (4, 4));
         let samples_120 = ctx_120.ticks_to_samples(PPQN, sample_rate);
         assert_eq!(
             samples_120, 22050,
@@ -220,7 +223,7 @@ mod tests {
 
     #[test]
     fn test_sample_rate_affects_conversion() {
-        let ctx = TimeContext::new(120.0, (4, 4), 100.0);
+        let ctx = TimeContext::new(120.0, (4, 4));
 
         // 1 beat at different sample rates
         let samples_44100 = ctx.ticks_to_samples(PPQN, 44100);
@@ -232,7 +235,7 @@ mod tests {
 
     #[test]
     fn test_zero_ticks() {
-        let ctx = TimeContext::new(120.0, (4, 4), 100.0);
+        let ctx = TimeContext::new(120.0, (4, 4));
         assert_eq!(ctx.ticks_to_samples(0, 44100), 0);
         assert_eq!(ctx.samples_to_ticks(0, 44100), 0);
     }

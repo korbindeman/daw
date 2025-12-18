@@ -330,7 +330,7 @@ impl Session {
         time_signature: impl Into<TimeSignature>,
         audio_paths: HashMap<String, PathBuf>,
     ) -> anyhow::Result<Self> {
-        let time_context = TimeContext::new(tempo, time_signature.into(), 100.0);
+        let time_context = TimeContext::new(tempo, time_signature.into());
 
         // Load metronome samples
         let metronome = Metronome::load()?;
@@ -383,7 +383,7 @@ impl Session {
         let project = daw_project::load_project_with_sample_rate(path, Some(sample_rate))?;
 
         // Create time context and load metronome
-        let time_context = TimeContext::new(project.tempo, project.time_signature, 100.0);
+        let time_context = TimeContext::new(project.tempo, project.time_signature);
         let metronome = Metronome::load()?;
 
         // Create session with loaded cache
@@ -534,14 +534,18 @@ impl Session {
         position_changed
     }
 
-    /// Send updated tracks to the audio engine (lock-free)
-    /// Converts tick positions to sample positions
-    pub fn update_tracks(&mut self) {
+    // =========================================================================
+    // Internal engine synchronization methods (not part of public API)
+    // =========================================================================
+
+    /// Send updated tracks to the audio engine (lock-free).
+    /// Converts tick positions to sample positions.
+    fn sync_tracks_to_engine(&mut self) {
         self.send_tracks_to_engine(self.engine.sample_rate);
     }
 
-    /// When tempo changes, re-send tracks with new sample positions
-    pub fn update_tempo(&mut self) {
+    /// When tempo changes, re-send tracks with new sample positions.
+    fn sync_tempo_to_engine(&mut self) {
         self.send_tracks_to_engine(self.engine.sample_rate);
     }
 
@@ -575,7 +579,7 @@ impl Session {
         };
 
         // Calculate timeline length based on content
-        let max_tick = self.calculate_max_tick();
+        let max_tick = self.max_tick();
         // Add some padding (4 bars worth)
         let ticks_per_bar = self.time_context.time_signature.ticks_per_bar();
         let end_tick = max_tick + ticks_per_bar * 4;
@@ -610,8 +614,11 @@ impl Session {
         })
     }
 
-    /// Calculate the maximum tick position across all clips
-    fn calculate_max_tick(&self) -> u64 {
+    /// Get the maximum tick position across all clips.
+    ///
+    /// This is useful for frontends to determine timeline length for layout purposes.
+    /// Returns 0 if there are no clips.
+    pub fn max_tick(&self) -> u64 {
         let mut max_tick = 0u64;
         for track in &self.tracks {
             for clip in track.clips() {
@@ -714,13 +721,13 @@ impl Session {
     /// Set the tempo and update the engine with new sample positions
     pub fn set_tempo(&mut self, tempo: f64) {
         self.time_context.tempo = tempo;
-        self.update_tempo();
+        self.sync_tempo_to_engine();
     }
 
     /// Set the time signature and update the engine
     pub fn set_time_signature(&mut self, time_signature: TimeSignature) {
         self.time_context.time_signature = time_signature;
-        self.update_tempo();
+        self.sync_tempo_to_engine();
     }
 
     // Track management methods
@@ -749,14 +756,6 @@ impl Session {
 
     pub fn sample_rate(&self) -> u32 {
         self.engine.sample_rate
-    }
-
-    pub fn calculate_timeline_width(&self) -> f64 {
-        let max_end_tick = self.calculate_max_tick();
-        let end_with_padding = max_end_tick + (PPQN * 4);
-        let content_width = self.time_context.ticks_to_pixels(end_with_padding);
-        let min_width = 1200.0;
-        content_width.max(min_width)
     }
 
     pub fn render_to_file(&self, path: &Path) -> anyhow::Result<()> {
