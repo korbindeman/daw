@@ -139,6 +139,18 @@ class SessionStore {
   }
 
   /**
+   * Render the current session to a WAV file.
+   */
+  async render(path: string): Promise<void> {
+    try {
+      await invoke("session_render", { path });
+    } catch (err) {
+      this._error = err instanceof Error ? err.message : String(err);
+      throw err;
+    }
+  }
+
+  /**
    * Convert ticks to musical time (bars:beats:ticks).
    */
   ticksToMusicalTime(tick: number): string {

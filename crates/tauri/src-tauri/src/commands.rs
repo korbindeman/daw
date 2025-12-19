@@ -91,6 +91,26 @@ pub fn session_save_as(path: String, state: State<AppState>) -> CommandResult<()
     Ok(())
 }
 
+/// Render the current session to a WAV file.
+///
+/// Returns an error if no session is loaded.
+#[tauri::command]
+pub fn session_render(path: String, state: State<AppState>) -> CommandResult<()> {
+    let session_lock = state
+        .session
+        .lock()
+        .map_err(|_| "Failed to acquire session lock".to_string())?;
+
+    let session = session_lock
+        .as_ref()
+        .ok_or_else(|| "No session loaded".to_string())?;
+
+    session
+        .render_to_file(Path::new(&path))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ============================================================================
 // Transport Commands
 // ============================================================================
