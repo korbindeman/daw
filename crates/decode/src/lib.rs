@@ -18,14 +18,52 @@ const SAMPLES_ROOT: &str = "samples";
 /// Accepts paths relative to the samples root (e.g., `cr78/hihat.wav`)
 /// or paths that already include the samples root (e.g., `samples/cr78/hihat.wav`).
 pub fn resolve_sample_path(path: &Path) -> Option<PathBuf> {
-    // Check if path exists as-is
+    resolve_sample_path_with_base(path, None)
+}
+
+/// Resolve a sample path to an absolute path, searching relative to a base directory.
+///
+/// Search order:
+/// 1. Path exists as-is (absolute path or relative to current directory)
+/// 2. base_dir/samples/path (e.g., /daw/projects/samples/cr78/kick.wav)
+/// 3. base_dir/../samples/path (e.g., /daw/samples/cr78/kick.wav when base is /daw/projects)
+/// 4. base_dir/path (e.g., /daw/projects/cr78/kick.wav)
+/// 5. samples/path (relative to current directory)
+///
+/// This allows projects to store samples relative to the project file location,
+/// or in a sibling 'samples' directory at the workspace root.
+pub fn resolve_sample_path_with_base(path: &Path, base_dir: Option<&Path>) -> Option<PathBuf> {
+    // Check if path exists as-is (absolute or relative to cwd)
     if path.exists() {
         return Some(path.to_path_buf());
     }
 
     let root = Path::new(SAMPLES_ROOT);
 
-    // Check if samples_root/path exists
+    // If a base directory is provided, check paths relative to it
+    if let Some(base) = base_dir {
+        // Check base_dir/samples/path
+        let with_base_samples = base.join(SAMPLES_ROOT).join(path);
+        if with_base_samples.exists() {
+            return Some(with_base_samples);
+        }
+
+        // Check base_dir/../samples/path (sibling samples directory)
+        if let Some(parent) = base.parent() {
+            let with_parent_samples = parent.join(SAMPLES_ROOT).join(path);
+            if with_parent_samples.exists() {
+                return Some(with_parent_samples);
+            }
+        }
+
+        // Check base_dir/path
+        let with_base = base.join(path);
+        if with_base.exists() {
+            return Some(with_base);
+        }
+    }
+
+    // Check samples_root/path (relative to cwd)
     let with_root = root.join(path);
     if with_root.exists() {
         return Some(with_root);
@@ -304,16 +342,53 @@ impl AudioCache {
         path: &Path,
         target_sample_rate: Option<u32>,
     ) -> anyhow::Result<AudioArc> {
-        let resolved = resolve_sample_path(path)
+        self.get_or_load_with_base(path, target_sample_rate, None)
+    }
+
+    /// Get audio from cache or load it from disk, resolving paths relative to a base directory.
+    ///
+    /// This is the same as `get_or_load` but allows specifying a base directory for
+    /// resolving relative sample paths. This is useful when loading projects where
+    /// samples are stored relative to the project file location.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the audio file (can be relative to samples root or base_dir)
+    /// * `target_sample_rate` - Optional target sample rate. If `None`, returns original.
+    /// * `base_dir` - Optional base directory for resolving relative paths
+    pub fn get_or_load_with_base(
+        &mut self,
+        path: &Path,
+        target_sample_rate: Option<u32>,
+        base_dir: Option<&Path>,
+    ) -> anyhow::Result<AudioArc> {
+        let resolved = resolve_sample_path_with_base(path, base_dir)
             .ok_or_else(|| anyhow::anyhow!("sample not found: {}", path.display()))?;
 
-        let hash = hash_path(&resolved);
+        self.get_or_load_direct(&resolved, target_sample_rate)
+    }
+
+    /// Get audio from cache or load it from disk using an already-resolved absolute path.
+    ///
+    /// Unlike `get_or_load` and `get_or_load_with_base`, this method does not perform
+    /// any path resolution. The caller is responsible for providing a valid absolute path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Absolute path to the audio file
+    /// * `target_sample_rate` - Optional target sample rate. If `None`, returns original.
+    pub fn get_or_load_direct(
+        &mut self,
+        path: &Path,
+        target_sample_rate: Option<u32>,
+    ) -> anyhow::Result<AudioArc> {
+        let hash = hash_path(path);
 
         // Load original if not cached
         if !self.originals.contains_key(&hash) {
-            let audio = decode_audio_arc_direct(&resolved, None)?;
+            let audio = decode_audio_arc_direct(path, None)?;
             self.originals.insert(hash, audio);
-            self.paths.insert(hash, resolved.clone());
+            self.paths.insert(hash, path.to_path_buf());
         }
 
         let original = self.originals.get(&hash).unwrap();

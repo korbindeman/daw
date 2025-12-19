@@ -1,6 +1,6 @@
 use daw_core::{
-    Clip, PPQN, Project, Session, TimeSignature, Track, TrackId, WaveformData, samples_to_ticks,
-    strip_samples_root,
+    Clip, PPQN, Project, SampleRef, Session, TimeSignature, Track, TrackId, WaveformData,
+    samples_to_ticks, strip_samples_root,
 };
 use daw_decode::decode_audio_arc;
 use daw_transport::AudioArc;
@@ -287,7 +287,7 @@ impl SequencerApp {
         let ticks_per_step = Self::ticks_per_step();
         let ticks_per_bar = NUM_STEPS as u64 * ticks_per_step;
 
-        let mut audio_paths: HashMap<String, PathBuf> = HashMap::new();
+        let mut sample_refs: HashMap<String, SampleRef> = HashMap::new();
         let transport_tracks: Vec<Track> = self
             .tracks
             .iter()
@@ -309,8 +309,11 @@ impl SequencerApp {
                     for (step_idx, &active) in page_steps.iter().enumerate() {
                         if active {
                             let clip_name = format!("{} {}", track.sample_name, clip_num);
-                            // Session::save() will strip the samples/ prefix
-                            audio_paths.insert(clip_name.clone(), sample_path.clone());
+                            // Store as DevRoot reference (relative to samples/ directory)
+                            sample_refs.insert(
+                                clip_name.clone(),
+                                SampleRef::DevRoot(sample_path.clone()),
+                            );
 
                             let waveform = WaveformData::from_audio_arc(audio, 512);
                             let start_tick = bar_offset + (step_idx as u64) * ticks_per_step;
@@ -341,11 +344,11 @@ impl SequencerApp {
             .save_file()
         {
             // Create a temporary session just for saving
-            match Session::new_with_audio_paths(
+            match Session::new_with_sample_refs(
                 transport_tracks,
                 self.tempo,
                 self.time_signature,
-                audio_paths,
+                sample_refs,
             ) {
                 Ok(mut save_session) => {
                     save_session.set_name(self.project_name.clone());
@@ -417,13 +420,14 @@ impl SequencerApp {
                             if page_idx < track_state.pages.len() && step_idx < NUM_STEPS {
                                 track_state.pages[page_idx][step_idx] = true;
 
-                                // Get the audio path from the session's audio_paths map
+                                // Get the sample ref from the session's sample_refs map
                                 if track_state.sample_path.is_none() {
-                                    if let Some(audio_path) =
-                                        loaded_session.audio_paths().get(&clip.name)
+                                    if let Some(sample_ref) =
+                                        loaded_session.sample_refs().get(&clip.name)
                                     {
-                                        track_state.sample_path = Some(audio_path.clone());
-                                        track_state.sample_name = audio_path
+                                        let path = sample_ref.path();
+                                        track_state.sample_path = Some(path.to_path_buf());
+                                        track_state.sample_name = path
                                             .file_stem()
                                             .map(|s| s.to_string_lossy().to_string())
                                             .unwrap_or_else(|| "Unknown".to_string());
@@ -480,7 +484,9 @@ impl SequencerApp {
                                 name: format!("{} {}", track.sample_name, segment_num),
                                 start_tick,
                                 end_tick: start_tick + audio_ticks,
-                                audio_path: track.sample_path.clone().unwrap_or_default(),
+                                sample_ref: SampleRef::DevRoot(
+                                    track.sample_path.clone().unwrap_or_default(),
+                                ),
                                 audio_offset: 0,
                             });
                             segment_num += 1;

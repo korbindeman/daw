@@ -2,12 +2,112 @@ mod load;
 mod save;
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub use load::{
-    ProjectMetadata, load_project, load_project_metadata, load_project_with_sample_rate,
+    LoadedProject, OfflineClip, ProjectMetadata, load_project, load_project_metadata,
+    load_project_with_sample_rate,
 };
 pub use save::save_project;
+
+/// A reference to an audio sample with explicit path semantics.
+///
+/// Instead of storing raw `PathBuf`s, we store typed references that make
+/// the path resolution explicit and unambiguous.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", content = "path")]
+pub enum SampleRef {
+    /// Path relative to the dev/workspace root's `samples/` directory.
+    /// e.g., "cr78/kick-accent.wav" resolves to `{dev_root}/samples/cr78/kick-accent.wav`
+    #[serde(rename = "dev_root")]
+    DevRoot(PathBuf),
+
+    /// Path relative to the project file's directory.
+    /// e.g., "audio/kick.wav" resolves to `{project_dir}/audio/kick.wav`
+    #[serde(rename = "project")]
+    ProjectRelative(PathBuf),
+}
+
+impl SampleRef {
+    /// Get the relative path portion of this reference.
+    pub fn path(&self) -> &Path {
+        match self {
+            SampleRef::DevRoot(p) => p,
+            SampleRef::ProjectRelative(p) => p,
+        }
+    }
+}
+
+impl std::fmt::Display for SampleRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SampleRef::DevRoot(p) => write!(f, "dev_root:{}", p.display()),
+            SampleRef::ProjectRelative(p) => write!(f, "project:{}", p.display()),
+        }
+    }
+}
+
+/// Context for resolving sample references to absolute paths.
+///
+/// Contains the various root directories needed to resolve different
+/// types of `SampleRef` values.
+#[derive(Debug, Clone)]
+pub struct PathContext {
+    /// Root directory of the project file (parent of .dawproj file).
+    pub project_root: PathBuf,
+
+    /// Optional dev/workspace root for resolving DevRoot samples.
+    /// When set, DevRoot("cr78/kick.wav") resolves to `{dev_root}/samples/cr78/kick.wav`.
+    pub dev_root: Option<PathBuf>,
+}
+
+impl PathContext {
+    /// Create a new PathContext from a project file path.
+    ///
+    /// The project_root is set to the parent directory of the project file.
+    /// dev_root must be set separately if needed.
+    pub fn from_project_path(project_path: &Path) -> Self {
+        Self {
+            project_root: project_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_default(),
+            dev_root: None,
+        }
+    }
+
+    /// Set the dev root directory.
+    pub fn with_dev_root(mut self, dev_root: PathBuf) -> Self {
+        self.dev_root = Some(dev_root);
+        self
+    }
+
+    /// Resolve a SampleRef to an absolute path.
+    ///
+    /// Returns `None` if the resolved path doesn't exist or if the required
+    /// root directory is not configured.
+    pub fn resolve(&self, sample_ref: &SampleRef) -> Option<PathBuf> {
+        match sample_ref {
+            SampleRef::DevRoot(rel_path) => {
+                let dev_root = self.dev_root.as_ref()?;
+                let resolved = dev_root.join("samples").join(rel_path);
+                if resolved.exists() {
+                    Some(resolved)
+                } else {
+                    None
+                }
+            }
+            SampleRef::ProjectRelative(rel_path) => {
+                let resolved = self.project_root.join(rel_path);
+                if resolved.exists() {
+                    Some(resolved)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
@@ -32,7 +132,8 @@ pub struct TrackData {
 pub struct ClipData {
     pub start_tick: u64,
     pub end_tick: u64,
-    pub audio_path: PathBuf,
+    /// Reference to the audio sample for this clip.
+    pub sample_ref: SampleRef,
     pub audio_offset: u64,
     pub name: String,
 }
@@ -73,14 +174,14 @@ mod tests {
                         ClipData {
                             start_tick: 0,
                             end_tick: 960,
-                            audio_path: PathBuf::from("audio/kick.wav"),
+                            sample_ref: SampleRef::DevRoot(PathBuf::from("audio/kick.wav")),
                             audio_offset: 0,
                             name: "Kick".to_string(),
                         },
                         ClipData {
                             start_tick: 960,
                             end_tick: 1920,
-                            audio_path: PathBuf::from("audio/snare.wav"),
+                            sample_ref: SampleRef::DevRoot(PathBuf::from("audio/snare.wav")),
                             audio_offset: 0,
                             name: "Snare".to_string(),
                         },
@@ -96,7 +197,7 @@ mod tests {
                     clips: vec![ClipData {
                         start_tick: 480,
                         end_tick: 960,
-                        audio_path: PathBuf::from("audio/hihat.wav"),
+                        sample_ref: SampleRef::DevRoot(PathBuf::from("audio/hihat.wav")),
                         audio_offset: 0,
                         name: "Hi-Hat".to_string(),
                     }],
@@ -130,7 +231,7 @@ mod tests {
             clips: vec![ClipData {
                 start_tick: 1920,
                 end_tick: 2880,
-                audio_path: PathBuf::from("samples/test.wav"),
+                sample_ref: SampleRef::DevRoot(PathBuf::from("samples/test.wav")),
                 audio_offset: 0,
                 name: "Test".to_string(),
             }],
@@ -147,8 +248,8 @@ mod tests {
         assert_eq!(decoded.clips.len(), 1);
         assert_eq!(decoded.clips[0].start_tick, 1920);
         assert_eq!(
-            decoded.clips[0].audio_path,
-            PathBuf::from("samples/test.wav")
+            decoded.clips[0].sample_ref,
+            SampleRef::DevRoot(PathBuf::from("samples/test.wav"))
         );
     }
 
@@ -157,7 +258,7 @@ mod tests {
         let clip = ClipData {
             start_tick: 4800,
             end_tick: 5760,
-            audio_path: PathBuf::from("/absolute/path/to/audio.wav"),
+            sample_ref: SampleRef::ProjectRelative(PathBuf::from("audio/local.wav")),
             audio_offset: 0,
             name: "Audio".to_string(),
         };
@@ -167,7 +268,24 @@ mod tests {
 
         assert_eq!(decoded.start_tick, clip.start_tick);
         assert_eq!(decoded.end_tick, clip.end_tick);
-        assert_eq!(decoded.audio_path, clip.audio_path);
+        assert_eq!(decoded.sample_ref, clip.sample_ref);
+    }
+
+    #[test]
+    fn test_sample_ref_serialization() {
+        // Test DevRoot serialization
+        let dev_root = SampleRef::DevRoot(PathBuf::from("cr78/kick.wav"));
+        let json = serde_json::to_string(&dev_root).expect("serialize");
+        assert!(json.contains("dev_root"));
+        let decoded: SampleRef = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(decoded, dev_root);
+
+        // Test ProjectRelative serialization
+        let project_rel = SampleRef::ProjectRelative(PathBuf::from("audio/local.wav"));
+        let json = serde_json::to_string(&project_rel).expect("serialize");
+        assert!(json.contains("project"));
+        let decoded: SampleRef = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(decoded, project_rel);
     }
 
     #[test]
@@ -224,5 +342,36 @@ mod tests {
 
         assert!(debug_str.contains("Test Project"));
         assert!(debug_str.contains("120"));
+    }
+
+    #[test]
+    fn test_path_context_resolution() {
+        use tempfile::tempdir;
+
+        let temp = tempdir().unwrap();
+        let project_dir = temp.path().join("projects");
+        let dev_root = temp.path();
+
+        std::fs::create_dir_all(&project_dir).unwrap();
+        std::fs::create_dir_all(dev_root.join("samples/cr78")).unwrap();
+
+        // Create a test audio file
+        let test_audio = dev_root.join("samples/cr78/kick.wav");
+        std::fs::write(&test_audio, b"fake wav").unwrap();
+
+        let ctx = PathContext {
+            project_root: project_dir.clone(),
+            dev_root: Some(dev_root.to_path_buf()),
+        };
+
+        // Test DevRoot resolution
+        let sample_ref = SampleRef::DevRoot(PathBuf::from("cr78/kick.wav"));
+        let resolved = ctx.resolve(&sample_ref);
+        assert!(resolved.is_some());
+        assert_eq!(resolved.unwrap(), test_audio);
+
+        // Test missing file returns None
+        let missing_ref = SampleRef::DevRoot(PathBuf::from("cr78/missing.wav"));
+        assert!(ctx.resolve(&missing_ref).is_none());
     }
 }

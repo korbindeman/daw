@@ -178,9 +178,9 @@ use std::path::{Path, PathBuf};
 use basedrop::Shared;
 
 use crate::time::{TimeContext, TimeSignature};
-use daw_decode::{AudioCache, decode_audio_arc_direct, strip_samples_root};
+use daw_decode::{AudioCache, decode_audio_arc_direct};
 use daw_engine::{AudioEngineHandle, EngineClip, EngineCommand, EngineStatus, EngineTrack};
-use daw_project::save_project;
+use daw_project::{PathContext, SampleRef, save_project};
 use daw_render::{render_timeline, write_wav};
 use daw_transport::{AudioArc, Clip, PPQN, Track, TrackId};
 
@@ -199,8 +199,21 @@ pub struct Metronome {
 impl Metronome {
     /// Load metronome samples from the assets directory
     pub fn load() -> anyhow::Result<Self> {
-        let hi = decode_audio_arc_direct(Path::new("assets/metronome_hi.wav"), None)?;
-        let lo = decode_audio_arc_direct(Path::new("assets/metronome_lo.wav"), None)?;
+        Self::load_with_base(None)
+    }
+
+    /// Load metronome samples, searching relative to an optional base directory
+    pub fn load_with_base(base_dir: Option<&Path>) -> anyhow::Result<Self> {
+        let hi_path = Path::new("assets/metronome_hi.wav");
+        let lo_path = Path::new("assets/metronome_lo.wav");
+
+        let hi_resolved = resolve_asset_path(hi_path, base_dir)
+            .ok_or_else(|| anyhow::anyhow!("metronome_hi.wav not found"))?;
+        let lo_resolved = resolve_asset_path(lo_path, base_dir)
+            .ok_or_else(|| anyhow::anyhow!("metronome_lo.wav not found"))?;
+
+        let hi = decode_audio_arc_direct(&hi_resolved, None)?;
+        let lo = decode_audio_arc_direct(&lo_resolved, None)?;
 
         Ok(Self {
             hi,
@@ -209,6 +222,37 @@ impl Metronome {
             volume: 0.8,
         })
     }
+}
+
+/// Resolve an asset path (like assets/metronome_hi.wav) searching relative to base directories.
+///
+/// Search order:
+/// 1. Path exists as-is (absolute or relative to cwd)
+/// 2. base_dir/path (e.g., /project/assets/metronome_hi.wav)
+/// 3. base_dir/../path (e.g., /daw/assets/metronome_hi.wav when base is /daw/projects)
+fn resolve_asset_path(path: &Path, base_dir: Option<&Path>) -> Option<PathBuf> {
+    // Check if path exists as-is
+    if path.exists() {
+        return Some(path.to_path_buf());
+    }
+
+    if let Some(base) = base_dir {
+        // Check base_dir/path
+        let with_base = base.join(path);
+        if with_base.exists() {
+            return Some(with_base);
+        }
+
+        // Check base_dir/../path (parent of base_dir)
+        if let Some(parent) = base.parent() {
+            let with_parent = parent.join(path);
+            if with_parent.exists() {
+                return Some(with_parent);
+            }
+        }
+    }
+
+    None
 }
 
 /// Snap mode for cursor placement and editing operations
@@ -279,8 +323,8 @@ pub struct Session {
     playback_state: PlaybackState,
     /// Cache for decoded and resampled audio
     cache: AudioCache,
-    /// Mapping from clip name to audio file path (relative to samples root)
-    audio_paths: HashMap<String, PathBuf>,
+    /// Mapping from clip name to sample reference
+    sample_refs: HashMap<String, SampleRef>,
     /// Path to the project file (if loaded from or saved to a file)
     project_path: Option<PathBuf>,
     /// Project name
@@ -317,18 +361,18 @@ impl Session {
         tempo: f64,
         time_signature: impl Into<TimeSignature>,
     ) -> anyhow::Result<Self> {
-        Self::new_with_audio_paths(tracks, tempo, time_signature, HashMap::new())
+        Self::new_with_sample_refs(tracks, tempo, time_signature, HashMap::new())
     }
 
-    /// Create a new session with audio path mappings.
+    /// Create a new session with sample reference mappings.
     ///
     /// This is typically used internally when loading projects that contain
     /// references to audio files.
-    pub fn new_with_audio_paths(
+    pub fn new_with_sample_refs(
         tracks: Vec<Track>,
         tempo: f64,
         time_signature: impl Into<TimeSignature>,
-        audio_paths: HashMap<String, PathBuf>,
+        sample_refs: HashMap<String, SampleRef>,
     ) -> anyhow::Result<Self> {
         let time_context = TimeContext::new(tempo, time_signature.into());
 
@@ -346,7 +390,7 @@ impl Session {
             current_tick: 0,
             playback_state: PlaybackState::Stopped,
             cache: AudioCache::new(),
-            audio_paths,
+            sample_refs,
             project_path: None,
             name: "Untitled".to_string(),
             metronome,
@@ -363,7 +407,7 @@ impl Session {
     /// Load a session from a project file.
     ///
     /// This loads all project settings (tempo, time signature, tracks) and starts
-    /// the audio engine.
+    /// the audio engine. Uses the default dev root for sample resolution.
     ///
     /// # Example
     ///
@@ -375,16 +419,54 @@ impl Session {
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn from_project(path: &Path) -> anyhow::Result<Self> {
+        // Use default dev root (grandparent of project file, e.g., /Users/korbin/dev/daw)
+        // PathContext::resolve will then look for samples in {dev_root}/samples/
+        let dev_root = path.parent().and_then(|p| p.parent());
+        Self::from_project_with_context(path, dev_root)
+    }
+
+    /// Load a session from a project file with explicit dev root.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the project file
+    /// * `dev_root` - Optional path to the dev workspace root (e.g., /Users/korbin/dev/daw).
+    ///   DevRoot sample refs will resolve to `{dev_root}/samples/{path}`.
+    pub fn from_project_with_context(path: &Path, dev_root: Option<&Path>) -> anyhow::Result<Self> {
         // Start engine first to get sample rate
         let engine = daw_engine::start(vec![])?;
         let sample_rate = engine.sample_rate;
 
+        // Build path context
+        let project_root = path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."));
+        let ctx = PathContext {
+            project_root,
+            dev_root: dev_root.map(|p| p.to_path_buf()),
+        };
+
         // Load project with audio resampled to engine sample rate
-        let project = daw_project::load_project_with_sample_rate(path, Some(sample_rate))?;
+        let project = daw_project::load_project_with_sample_rate(path, Some(sample_rate), &ctx)?;
+
+        // Get the project directory to use as base for asset resolution
+        let project_dir = path.parent();
 
         // Create time context and load metronome
         let time_context = TimeContext::new(project.tempo, project.time_signature);
-        let metronome = Metronome::load()?;
+        let metronome = Metronome::load_with_base(project_dir)?;
+
+        // Log offline clips if any
+        if !project.offline_clips.is_empty() {
+            eprintln!(
+                "Warning: {} clip(s) are offline (missing audio files):",
+                project.offline_clips.len()
+            );
+            for offline in &project.offline_clips {
+                eprintln!("  - {} ({}): {}", offline.name, offline.sample_ref, offline.error);
+            }
+        }
 
         // Create session with loaded cache
         let mut session = Self {
@@ -394,7 +476,7 @@ impl Session {
             current_tick: 0,
             playback_state: PlaybackState::Stopped,
             cache: project.cache,
-            audio_paths: project.audio_paths,
+            sample_refs: project.sample_refs,
             project_path: Some(path.to_path_buf()),
             name: project.name,
             metronome,
@@ -409,13 +491,6 @@ impl Session {
     }
 
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
-        // Strip samples root from all audio paths before saving
-        let stripped_paths: HashMap<String, PathBuf> = self
-            .audio_paths
-            .iter()
-            .map(|(name, p)| (name.clone(), strip_samples_root(p)))
-            .collect();
-
         save_project(
             path,
             self.name.clone(),
@@ -425,7 +500,7 @@ impl Session {
                 self.time_signature().denominator,
             ),
             &self.tracks,
-            &stripped_paths,
+            &self.sample_refs,
         )?;
         Ok(())
     }
@@ -781,8 +856,8 @@ impl Session {
         self.project_path = Some(path);
     }
 
-    pub fn audio_paths(&self) -> &HashMap<String, PathBuf> {
-        &self.audio_paths
+    pub fn sample_refs(&self) -> &HashMap<String, SampleRef> {
+        &self.sample_refs
     }
 
     // Metronome controls

@@ -52,6 +52,12 @@ pub struct AudioEngineHandle {
     _stream: cpal::Stream,
 }
 
+// SAFETY: AudioEngineHandle is safe to send between threads despite containing cpal::Stream.
+// The stream is only accessed during construction and drop, and all communication with the
+// audio thread happens through lock-free queues (rtrb). The stream itself runs on a separate
+// audio thread managed by cpal and doesn't need to be accessed from other threads.
+unsafe impl Send for AudioEngineHandle {}
+
 pub fn start(tracks: Vec<EngineTrack>) -> anyhow::Result<AudioEngineHandle> {
     let collector = Collector::new();
     let handle = collector.handle();

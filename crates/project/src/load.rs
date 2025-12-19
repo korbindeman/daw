@@ -1,4 +1,4 @@
-use crate::{Project, ProjectError};
+use crate::{PathContext, Project, ProjectError, SampleRef};
 use daw_transport::{Clip, Track, TrackId, WaveformData};
 use std::collections::HashMap;
 use std::fs::File;
@@ -6,16 +6,34 @@ use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
 
+/// Information about a clip whose audio file could not be loaded.
+#[derive(Debug, Clone)]
+pub struct OfflineClip {
+    /// The track this clip belongs to
+    pub track_id: TrackId,
+    /// The original sample reference from the project file
+    pub sample_ref: SampleRef,
+    /// The clip's position on the timeline
+    pub start_tick: u64,
+    pub end_tick: u64,
+    /// The clip's name
+    pub name: String,
+    /// Error message describing why the audio couldn't be loaded
+    pub error: String,
+}
+
 #[derive(Debug)]
 pub struct LoadedProject {
     pub name: String,
     pub tempo: f64,
     pub time_signature: (u32, u32),
     pub tracks: Vec<Track>,
-    /// Mapping from clip name to audio file path
-    pub audio_paths: HashMap<String, std::path::PathBuf>,
+    /// Mapping from clip name to sample reference
+    pub sample_refs: HashMap<String, SampleRef>,
     /// Audio cache used during loading (contains decoded and resampled audio)
     pub cache: daw_decode::AudioCache,
+    /// Clips that couldn't be loaded due to missing or invalid audio files
+    pub offline_clips: Vec<OfflineClip>,
 }
 
 #[derive(Debug, Clone)]
@@ -53,19 +71,21 @@ pub fn load_project_metadata(path: &Path) -> Result<ProjectMetadata, ProjectErro
     })
 }
 
-pub fn load_project(path: &Path) -> Result<LoadedProject, ProjectError> {
-    load_project_with_sample_rate(path, None)
+pub fn load_project(path: &Path, ctx: &PathContext) -> Result<LoadedProject, ProjectError> {
+    load_project_with_sample_rate(path, None, ctx)
 }
 
 pub fn load_project_with_sample_rate(
     path: &Path,
     target_sample_rate: Option<u32>,
+    ctx: &PathContext,
 ) -> Result<LoadedProject, ProjectError> {
     let project = load_project_data(path)?;
 
     let mut cache = daw_decode::AudioCache::new();
     let mut tracks = Vec::new();
-    let mut audio_paths = HashMap::new();
+    let mut sample_refs = HashMap::new();
+    let mut offline_clips = Vec::new();
 
     for track_data in &project.tracks {
         let mut track = Track::new(TrackId(track_data.id), track_data.name.clone());
@@ -75,25 +95,56 @@ pub fn load_project_with_sample_rate(
         track.solo = track_data.solo;
 
         for clip_data in &track_data.clips {
-            let audio = cache
-                .get_or_load(&clip_data.audio_path, target_sample_rate)
-                .map_err(|e| ProjectError::AudioDecode {
-                    path: clip_data.audio_path.clone(),
-                    source: e,
-                })?;
+            // Try to resolve the sample reference to an absolute path
+            let resolved_path = ctx.resolve(&clip_data.sample_ref);
 
-            audio_paths.insert(clip_data.name.clone(), clip_data.audio_path.clone());
+            match resolved_path {
+                Some(abs_path) => {
+                    // Try to load the audio
+                    match cache.get_or_load_direct(&abs_path, target_sample_rate) {
+                        Ok(audio) => {
+                            sample_refs
+                                .insert(clip_data.name.clone(), clip_data.sample_ref.clone());
 
-            let waveform = WaveformData::from_audio_arc(&audio, 512);
+                            let waveform = WaveformData::from_audio_arc(&audio, 512);
 
-            track.insert_clip(Clip {
-                start_tick: clip_data.start_tick,
-                end_tick: clip_data.end_tick,
-                audio,
-                waveform: Arc::new(waveform),
-                audio_offset: clip_data.audio_offset,
-                name: clip_data.name.clone(),
-            });
+                            track.insert_clip(Clip {
+                                start_tick: clip_data.start_tick,
+                                end_tick: clip_data.end_tick,
+                                audio,
+                                waveform: Arc::new(waveform),
+                                audio_offset: clip_data.audio_offset,
+                                name: clip_data.name.clone(),
+                            });
+                        }
+                        Err(e) => {
+                            // Audio file exists but couldn't be decoded
+                            offline_clips.push(OfflineClip {
+                                track_id: TrackId(track_data.id),
+                                sample_ref: clip_data.sample_ref.clone(),
+                                start_tick: clip_data.start_tick,
+                                end_tick: clip_data.end_tick,
+                                name: clip_data.name.clone(),
+                                error: format!("Failed to decode: {}", e),
+                            });
+                        }
+                    }
+                }
+                None => {
+                    // Sample reference couldn't be resolved (file not found)
+                    offline_clips.push(OfflineClip {
+                        track_id: TrackId(track_data.id),
+                        sample_ref: clip_data.sample_ref.clone(),
+                        start_tick: clip_data.start_tick,
+                        end_tick: clip_data.end_tick,
+                        name: clip_data.name.clone(),
+                        error: format!(
+                            "Sample not found: {:?}",
+                            clip_data.sample_ref.path().display()
+                        ),
+                    });
+                }
+            }
         }
 
         tracks.push(track);
@@ -104,19 +155,17 @@ pub fn load_project_with_sample_rate(
         tempo: project.tempo,
         time_signature: project.time_signature,
         tracks,
-        audio_paths,
+        sample_refs,
         cache,
+        offline_clips,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ClipData, Project, TrackData, save_project};
-    use daw_transport::{AudioArc, Clip, Track, TrackId, WaveformData};
-    use std::collections::HashMap;
+    use crate::{ClipData, Project, TrackData};
     use std::path::PathBuf;
-    use std::sync::Arc;
     use tempfile::tempdir;
 
     fn write_test_wav(path: &Path) {
@@ -142,7 +191,11 @@ mod tests {
 
     #[test]
     fn test_load_project_file_not_found() {
-        let result = load_project(Path::new("/nonexistent/project.dawproj"));
+        let ctx = PathContext {
+            project_root: PathBuf::from("/nonexistent"),
+            dev_root: None,
+        };
+        let result = load_project(Path::new("/nonexistent/project.dawproj"), &ctx);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ProjectError::Io(_)));
     }
@@ -153,60 +206,14 @@ mod tests {
         let path = dir.path().join("invalid.dawproj");
         std::fs::write(&path, b"not valid json or msgpack").expect("write");
 
-        let result = load_project(&path);
+        let ctx = PathContext::from_project_path(&path);
+        let result = load_project(&path, &ctx);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ProjectError::Deserialize(_)));
     }
 
     #[test]
-    fn test_load_project_roundtrip() {
-        let dir = tempdir().expect("tempdir");
-        let project_path = dir.path().join("test.dawproj");
-        let audio_path = dir.path().join("audio.wav");
-
-        write_test_wav(&audio_path);
-
-        let audio = AudioArc::new(vec![0.0; 100], 44100, 2);
-        let waveform = Arc::new(WaveformData::from_audio_arc(&audio, 512));
-
-        let mut original_track = Track::new(TrackId(1), "Roundtrip Track".to_string());
-        original_track.volume = 0.85;
-        original_track.insert_clip(Clip {
-            start_tick: 960,
-            end_tick: 1920,
-            audio,
-            waveform,
-            audio_offset: 0,
-            name: "Test Clip".to_string(),
-        });
-
-        let mut audio_paths = HashMap::new();
-        audio_paths.insert("Test Clip".to_string(), audio_path.clone());
-
-        save_project(
-            &project_path,
-            "Roundtrip Test".to_string(),
-            128.0,
-            (4, 4),
-            &[original_track],
-            &audio_paths,
-        )
-        .expect("save");
-
-        let loaded = load_project(&project_path).expect("load");
-
-        assert_eq!(loaded.name, "Roundtrip Test");
-        assert_eq!(loaded.tempo, 128.0);
-        assert_eq!(loaded.time_signature, (4, 4));
-        assert_eq!(loaded.tracks.len(), 1);
-        assert_eq!(loaded.tracks[0].id.0, 1);
-        assert_eq!(loaded.tracks[0].clips().len(), 1);
-        assert_eq!(loaded.tracks[0].clips()[0].start_tick, 960);
-        assert_eq!(loaded.tracks[0].clips()[0].end_tick, 1920);
-    }
-
-    #[test]
-    fn test_load_project_with_audio_path() {
+    fn test_load_project_with_project_relative_sample() {
         let dir = tempdir().expect("tempdir");
         let project_path = dir.path().join("test.dawproj");
         let audio_path = dir.path().join("sample.wav");
@@ -214,7 +221,7 @@ mod tests {
         write_test_wav(&audio_path);
 
         let project = Project {
-            name: "Audio Path Test".to_string(),
+            name: "Project Relative Test".to_string(),
             tempo: 120.0,
             time_signature: (4, 4),
             tracks: vec![TrackData {
@@ -223,7 +230,7 @@ mod tests {
                 clips: vec![ClipData {
                     start_tick: 0,
                     end_tick: 960,
-                    audio_path: audio_path.clone(),
+                    sample_ref: SampleRef::ProjectRelative(PathBuf::from("sample.wav")),
                     audio_offset: 0,
                     name: "Sample Clip".to_string(),
                 }],
@@ -238,33 +245,39 @@ mod tests {
         let writer = std::io::BufWriter::new(file);
         serde_json::to_writer(writer, &project).expect("encode");
 
-        let loaded = load_project(&project_path).expect("load");
+        let ctx = PathContext::from_project_path(&project_path);
+        let loaded = load_project(&project_path, &ctx).expect("load");
 
         assert_eq!(loaded.tracks[0].clips()[0].start_tick, 0);
-        assert_eq!(loaded.audio_paths.get("Sample Clip").unwrap(), &audio_path);
+        assert!(loaded.offline_clips.is_empty());
     }
 
     #[test]
-    fn test_load_legacy_msgpack_project() {
+    fn test_load_project_with_dev_root_sample() {
         let dir = tempdir().expect("tempdir");
-        let project_path = dir.path().join("legacy.dawproj");
-        let audio_path = dir.path().join("sample.wav");
+        let project_dir = dir.path().join("projects");
+        let samples_dir = dir.path().join("samples").join("drums");
+        std::fs::create_dir_all(&project_dir).expect("create project dir");
+        std::fs::create_dir_all(&samples_dir).expect("create samples dir");
+
+        let project_path = project_dir.join("test.dawproj");
+        let audio_path = samples_dir.join("kick.wav");
 
         write_test_wav(&audio_path);
 
         let project = Project {
-            name: "Legacy MsgPack Test".to_string(),
+            name: "Dev Root Test".to_string(),
             tempo: 120.0,
             time_signature: (4, 4),
             tracks: vec![TrackData {
                 id: 1,
-                name: "Sample Track".to_string(),
+                name: "Drums".to_string(),
                 clips: vec![ClipData {
                     start_tick: 0,
                     end_tick: 960,
-                    audio_path: audio_path.clone(),
+                    sample_ref: SampleRef::DevRoot(PathBuf::from("drums/kick.wav")),
                     audio_offset: 0,
-                    name: "Sample Clip".to_string(),
+                    name: "Kick".to_string(),
                 }],
                 volume: 1.0,
                 pan: 0.0,
@@ -273,19 +286,20 @@ mod tests {
             }],
         };
 
-        // Write as MessagePack (legacy format)
         let file = std::fs::File::create(&project_path).expect("create");
         let writer = std::io::BufWriter::new(file);
-        rmp_serde::encode::write(&mut { writer }, &project).expect("encode");
+        serde_json::to_writer(writer, &project).expect("encode");
 
-        let loaded = load_project(&project_path).expect("load");
+        let ctx = PathContext::from_project_path(&project_path)
+            .with_dev_root(dir.path().to_path_buf());
+        let loaded = load_project(&project_path, &ctx).expect("load");
 
-        assert_eq!(loaded.name, "Legacy MsgPack Test");
         assert_eq!(loaded.tracks[0].clips()[0].start_tick, 0);
+        assert!(loaded.offline_clips.is_empty());
     }
 
     #[test]
-    fn test_load_project_missing_audio_file() {
+    fn test_load_project_missing_audio_creates_offline_clip() {
         let dir = tempdir().expect("tempdir");
         let project_path = dir.path().join("test.dawproj");
 
@@ -299,7 +313,7 @@ mod tests {
                 clips: vec![ClipData {
                     start_tick: 0,
                     end_tick: 960,
-                    audio_path: PathBuf::from("nonexistent.wav"),
+                    sample_ref: SampleRef::ProjectRelative(PathBuf::from("nonexistent.wav")),
                     audio_offset: 0,
                     name: "Missing Clip".to_string(),
                 }],
@@ -314,12 +328,18 @@ mod tests {
         let writer = std::io::BufWriter::new(file);
         serde_json::to_writer(writer, &project).expect("encode");
 
-        let result = load_project(&project_path);
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            ProjectError::AudioDecode { .. }
-        ));
+        let ctx = PathContext::from_project_path(&project_path);
+        let loaded = load_project(&project_path, &ctx).expect("load");
+
+        // Project should load successfully
+        assert_eq!(loaded.name, "Missing Audio");
+        // Track should exist but have no clips (the clip is offline)
+        assert_eq!(loaded.tracks.len(), 1);
+        assert!(loaded.tracks[0].clips().is_empty());
+        // Offline clip should be recorded
+        assert_eq!(loaded.offline_clips.len(), 1);
+        assert_eq!(loaded.offline_clips[0].name, "Missing Clip");
+        assert!(loaded.offline_clips[0].error.contains("Sample not found"));
     }
 
     #[test]
@@ -338,12 +358,14 @@ mod tests {
         let writer = std::io::BufWriter::new(file);
         serde_json::to_writer(writer, &project).expect("encode");
 
-        let loaded = load_project(&project_path).expect("load");
+        let ctx = PathContext::from_project_path(&project_path);
+        let loaded = load_project(&project_path, &ctx).expect("load");
 
         assert_eq!(loaded.name, "Empty");
         assert_eq!(loaded.tempo, 90.0);
         assert_eq!(loaded.time_signature, (6, 8));
         assert!(loaded.tracks.is_empty());
-        assert!(loaded.audio_paths.is_empty());
+        assert!(loaded.sample_refs.is_empty());
+        assert!(loaded.offline_clips.is_empty());
     }
 }

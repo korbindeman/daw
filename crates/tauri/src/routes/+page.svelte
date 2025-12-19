@@ -1,48 +1,84 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
+    import Header from "$lib/components/Header.svelte";
+    import { sessionStore } from "$lib/stores/session.svelte";
+    import { transportStore } from "$lib/stores/transport.svelte";
 
-  let name = $state("");
-  let greetMsg = $state("");
+    let loadError = $state<string | null>(null);
 
-  async function greet(event: Event) {
-    event.preventDefault();
-    greetMsg = await invoke("greet", { name });
-  }
+    const session = $derived(sessionStore.session);
+    const loading = $derived(sessionStore.loading);
 </script>
 
-<main class="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
-  <div class="max-w-md w-full space-y-8">
-    <div class="text-center">
-      <h1 class="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-        DAW Tauri
-      </h1>
-      <p class="text-gray-600 dark:text-gray-400">
-        Digital Audio Workstation
-      </p>
-    </div>
+<div class="h-screen flex flex-col bg-gray-800">
+    <Header />
 
-    <form onsubmit={greet} class="space-y-4">
-      <div>
-        <input
-          id="greet-input"
-          type="text"
-          placeholder="Enter a name..."
-          bind:value={name}
-          class="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-        />
-      </div>
-      <button
-        type="submit"
-        class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-      >
-        Greet
-      </button>
-    </form>
+    <main class="flex-1 overflow-hidden">
+        {#if loading}
+            <div class="h-full flex items-center justify-center text-white">
+                <div class="text-center">
+                    <div class="text-xl mb-2">Loading project...</div>
+                    <div class="text-sm text-gray-400">Please wait</div>
+                </div>
+            </div>
+        {:else if loadError}
+            <div class="h-full flex items-center justify-center text-white">
+                <div class="text-center max-w-md">
+                    <div class="text-xl mb-2 text-red-400">
+                        Failed to load project
+                    </div>
+                    <div class="text-sm text-gray-400 mb-4">{loadError}</div>
+                    <button
+                        onclick={() => window.location.reload()}
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition-colors"
+                    >
+                        Retry
+                    </button>
+                </div>
+            </div>
+        {:else if session}
+            <div class="h-full flex items-center justify-center text-white">
+                <div class="text-center">
+                    <div class="text-2xl mb-4">
+                        Project Loaded: {session.name}
+                    </div>
+                    <div class="text-sm text-gray-400 mb-6">
+                        {session.tracks.length} tracks • {session.tempo} BPM • {session
+                            .timeSignature.numerator}/{session.timeSignature
+                            .denominator}
+                    </div>
 
-    {#if greetMsg}
-      <p class="text-center text-gray-700 dark:text-gray-300 p-4 bg-white dark:bg-gray-800 rounded-lg">
-        {greetMsg}
-      </p>
-    {/if}
-  </div>
-</main>
+                    <!-- Transport controls placeholder -->
+                    <div class="flex gap-2 justify-center">
+                        <button
+                            onclick={() => transportStore.play()}
+                            class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded text-sm font-medium transition-colors"
+                        >
+                            Play
+                        </button>
+                        <button
+                            onclick={() => transportStore.pause()}
+                            class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded text-sm font-medium transition-colors"
+                        >
+                            Pause
+                        </button>
+                        <button
+                            onclick={() => transportStore.stop()}
+                            class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition-colors"
+                        >
+                            Stop
+                        </button>
+                    </div>
+                </div>
+            </div>
+        {:else}
+            <div class="h-full flex items-center justify-center text-white">
+                <div class="text-center">
+                    <div class="text-xl mb-2">No project loaded</div>
+                    <div class="text-sm text-gray-400">
+                        Click "Open Project" to get started
+                    </div>
+                </div>
+            </div>
+        {/if}
+    </main>
+</div>

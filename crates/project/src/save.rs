@@ -1,5 +1,6 @@
-use crate::{ClipData, Project, ProjectError, TrackData};
+use crate::{ClipData, Project, ProjectError, SampleRef, TrackData};
 use daw_transport::Track;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
@@ -10,7 +11,7 @@ pub fn save_project(
     tempo: f64,
     time_signature: (u32, u32),
     tracks: &[Track],
-    audio_paths: &std::collections::HashMap<String, std::path::PathBuf>,
+    sample_refs: &HashMap<String, SampleRef>,
 ) -> Result<(), ProjectError> {
     let project = Project {
         name,
@@ -24,12 +25,15 @@ pub fn save_project(
                 clips: track
                     .clips()
                     .iter()
-                    .map(|clip| ClipData {
-                        name: clip.name.clone(),
-                        start_tick: clip.start_tick,
-                        end_tick: clip.end_tick,
-                        audio_offset: clip.audio_offset,
-                        audio_path: audio_paths.get(&clip.name).cloned().unwrap_or_default(),
+                    .filter_map(|clip| {
+                        // Only save clips that have a sample reference
+                        sample_refs.get(&clip.name).map(|sample_ref| ClipData {
+                            name: clip.name.clone(),
+                            start_tick: clip.start_tick,
+                            end_tick: clip.end_tick,
+                            audio_offset: clip.audio_offset,
+                            sample_ref: sample_ref.clone(),
+                        })
                     })
                     .collect(),
                 volume: track.volume,
@@ -51,12 +55,11 @@ pub fn save_project(
 mod tests {
     use super::*;
     use daw_transport::{AudioArc, Clip, Track, TrackId, WaveformData};
-    use std::collections::HashMap;
     use std::path::PathBuf;
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    fn create_test_track() -> (Track, HashMap<String, std::path::PathBuf>) {
+    fn create_test_track() -> (Track, HashMap<String, SampleRef>) {
         let audio = AudioArc::new(vec![0.0; 1000], 44100, 2);
         let waveform = Arc::new(WaveformData::from_audio_arc(&audio, 512));
 
@@ -79,11 +82,17 @@ mod tests {
             name: "Snare".to_string(),
         });
 
-        let mut audio_paths = HashMap::new();
-        audio_paths.insert("Kick".to_string(), PathBuf::from("audio/kick.wav"));
-        audio_paths.insert("Snare".to_string(), PathBuf::from("audio/snare.wav"));
+        let mut sample_refs = HashMap::new();
+        sample_refs.insert(
+            "Kick".to_string(),
+            SampleRef::DevRoot(PathBuf::from("drums/kick.wav")),
+        );
+        sample_refs.insert(
+            "Snare".to_string(),
+            SampleRef::DevRoot(PathBuf::from("drums/snare.wav")),
+        );
 
-        (track, audio_paths)
+        (track, sample_refs)
     }
 
     #[test]
@@ -91,7 +100,7 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("test.dawproj");
 
-        let (track, audio_paths) = create_test_track();
+        let (track, sample_refs) = create_test_track();
 
         save_project(
             &path,
@@ -99,7 +108,7 @@ mod tests {
             120.0,
             (4, 4),
             &[track],
-            &audio_paths,
+            &sample_refs,
         )
         .expect("save");
 
@@ -111,7 +120,7 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("test.dawproj");
 
-        let (track, audio_paths) = create_test_track();
+        let (track, sample_refs) = create_test_track();
 
         save_project(
             &path,
@@ -119,7 +128,7 @@ mod tests {
             140.0,
             (3, 4),
             &[track],
-            &audio_paths,
+            &sample_refs,
         )
         .expect("save");
 
@@ -132,6 +141,11 @@ mod tests {
         assert_eq!(loaded.time_signature, (3, 4));
         assert_eq!(loaded.tracks.len(), 1);
         assert_eq!(loaded.tracks[0].clips.len(), 2);
+        // Verify sample refs are saved correctly
+        assert_eq!(
+            loaded.tracks[0].clips[0].sample_ref,
+            SampleRef::DevRoot(PathBuf::from("drums/kick.wav"))
+        );
     }
 
     #[test]
@@ -157,23 +171,24 @@ mod tests {
     }
 
     #[test]
-    fn test_save_project_with_missing_audio_path() {
+    fn test_save_project_clips_without_sample_ref_are_skipped() {
         let dir = tempdir().expect("tempdir");
-        let path = dir.path().join("missing_path.dawproj");
+        let path = dir.path().join("missing_ref.dawproj");
 
         let audio = AudioArc::new(vec![0.0; 100], 44100, 2);
         let waveform = Arc::new(WaveformData::from_audio_arc(&audio, 512));
 
-        let mut track = Track::new(TrackId(1), "Missing Path Track".to_string());
+        let mut track = Track::new(TrackId(1), "Track".to_string());
         track.insert_clip(Clip {
             start_tick: 0,
             end_tick: 960,
             audio,
             waveform,
             audio_offset: 0,
-            name: "Missing Path Clip".to_string(),
+            name: "Clip Without Ref".to_string(),
         });
 
+        // Save with empty sample_refs - clip should be skipped
         save_project(
             &path,
             "Test".to_string(),
@@ -188,6 +203,8 @@ mod tests {
         let reader = std::io::BufReader::new(file);
         let loaded: crate::Project = serde_json::from_reader(reader).expect("decode");
 
-        assert_eq!(loaded.tracks[0].clips[0].audio_path, PathBuf::new());
+        // Track exists but has no clips (the clip was skipped)
+        assert_eq!(loaded.tracks.len(), 1);
+        assert!(loaded.tracks[0].clips.is_empty());
     }
 }
