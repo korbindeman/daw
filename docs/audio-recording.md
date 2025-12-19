@@ -1,10 +1,14 @@
 # Audio Recording
 
+> ⚠️ **STATUS: PLANNED / NOT YET IMPLEMENTED**
+>
+> This document describes the *planned* audio recording system. The features described here are part of the roadmap but have **not yet been implemented** in the codebase. This serves as a design document for future development.
+
 This document describes the audio recording system, including track arming, monitoring modes, count-in functionality, and the recording state machine.
 
 ## Overview
 
-The recording system allows users to record audio from their input device (e.g., microphone or audio interface) onto armed tracks. Key features include:
+The recording system will allow users to record audio from their input device (e.g., microphone or audio interface) onto armed tracks. Planned features include:
 
 - **Track Arming**: Select which track receives the recorded audio
 - **Monitoring Modes**: Listen to input with different monitoring behaviors (In/Auto/Off)
@@ -16,7 +20,7 @@ The recording system allows users to record audio from their input device (e.g.,
 
 ### Components
 
-The recording system spans three main crates:
+The recording system will span three main crates:
 
 1. **transport** - Track arming state and monitoring modes
 2. **engine** - Real-time audio capture via CPAL input stream
@@ -34,7 +38,7 @@ Input Device → CPAL Input Stream → RecordedChunks → rtrb Queue → Session
 
 ### MonitorMode Enum
 
-Defined in `crates/transport/src/lib.rs`:
+Will be defined in `crates/transport/src/lib.rs`:
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,7 +67,7 @@ pub struct Track {
 
 ### Single-Track Arming Constraint
 
-Currently, only one track can be armed at a time. This is enforced by `Session::arm_track()`:
+Only one track will be armable at a time. This will be enforced by `Session::arm_track()`:
 
 ```rust
 pub fn arm_track(&mut self, track_id: u64) {
@@ -83,7 +87,7 @@ pub fn arm_track(&mut self, track_id: u64) {
 
 ## Recording State Machine
 
-Defined in `crates/core/src/session.rs`:
+Will be defined in `crates/core/src/session.rs`:
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,7 +143,7 @@ Idle ──────────────────────> CountIn
 
 ### RecordedChunk
 
-Defined in `crates/engine/src/lib.rs`:
+Will be defined in `crates/engine/src/lib.rs`:
 
 ```rust
 pub struct RecordedChunk {

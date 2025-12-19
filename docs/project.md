@@ -1,10 +1,10 @@
 # Project Crate (`daw_project`)
 
-The project crate handles saving and loading DAW project files. Projects are serialized using MessagePack format (`.dawproj` files).
+The project crate handles saving and loading DAW project files. Projects are serialized as JSON (`.dawproj` files).
 
 ## File Format
 
-Projects are stored as MessagePack-encoded binary files containing:
+Projects are stored as JSON files containing:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -20,23 +20,47 @@ Projects are stored as MessagePack-encoded binary files containing:
 | `id` | u64 | Unique track identifier |
 | `name` | String | Track name |
 | `clips` | Vec\<ClipData\> | List of clips on the track |
+| `volume` | f32 | Track volume (0.0 to 1.0) |
+| `pan` | f32 | Track pan (-1.0 to 1.0) |
+| `enabled` | bool | Whether track is enabled (not muted) |
+| `solo` | bool | Whether track is soloed |
 
 ### ClipData
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | u64 | Unique clip identifier |
-| `start` | u64 | Start position in ticks (PPQN = 960) |
-| `audio_path` | PathBuf | Path to the audio file |
+| `start_tick` | u64 | Start position in ticks (PPQN = 960) |
+| `end_tick` | u64 | End position in ticks |
+| `sample_ref` | SampleRef | Reference to the audio file (see below) |
+| `audio_offset` | u64 | Offset into the audio in samples (for trimmed starts) |
+| `name` | String | Display name for the clip |
 
-## Audio Path Resolution
+## Audio Path Resolution (SampleRef)
 
-Audio paths can be either absolute or relative:
+Audio paths use a typed `SampleRef` enum for explicit path semantics:
 
-- **Absolute paths** are used as-is
-- **Relative paths** are resolved relative to the project file's directory
+```rust
+enum SampleRef {
+    /// Relative to {dev_root}/samples/
+    DevRoot(PathBuf),
 
-For example, if your project is at `projects/my_song.dawproj` and references `../samples/kick.wav`, the audio file will be loaded from `samples/kick.wav`.
+    /// Relative to the project file's directory
+    ProjectRelative(PathBuf),
+}
+```
+
+In the JSON file, this is serialized as:
+
+```json
+{
+  "sample_ref": {
+    "kind": "dev_root",
+    "path": "cr78/kick-accent.wav"
+  }
+}
+```
+
+Resolution uses a `PathContext` that holds the root directories. See `docs/sample-refs.md` for full details.
 
 ## Project Metadata
 
@@ -57,45 +81,46 @@ For performance reasons, you can load just the project metadata without decoding
 ### Saving a Project
 
 ```rust
-use daw_project::save_project;
-use daw_transport::{Track, TrackId, Clip, ClipId, AudioBuffer, WaveformData};
+use daw_project::{save_project, SampleRef};
+use daw_transport::{AudioArc, Track, TrackId, Clip, WaveformData};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 // Create example tracks with clips
-let audio = Arc::new(AudioBuffer {
-    samples: vec![0.0; 44100],
-    sample_rate: 44100,
-    channels: 2,
+let audio = AudioArc::new(vec![0.0; 44100 * 2], 44100, 2);
+let waveform = Arc::new(WaveformData::from_audio_arc(&audio, 512));
+
+let mut track = Track::new(TrackId(1), "Drums".to_string());
+track.insert_clip(Clip {
+    start_tick: 0,
+    end_tick: 960,
+    audio: audio.clone(),
+    waveform: waveform.clone(),
+    audio_offset: 0,
+    name: "Kick".to_string(),
 });
-let waveform = Arc::new(WaveformData::from_audio_buffer(&audio, 512));
+track.insert_clip(Clip {
+    start_tick: 960,
+    end_tick: 1920,
+    audio: audio.clone(),
+    waveform: waveform.clone(),
+    audio_offset: 0,
+    name: "Snare".to_string(),
+});
 
-let tracks = vec![
-    Track {
-        id: TrackId(1),
-        name: "Drums".to_string(),
-        clips: vec![
-            Clip {
-                id: ClipId(0),
-                start: 0,
-                audio: audio.clone(),
-                waveform: waveform.clone(),
-            },
-            Clip {
-                id: ClipId(1),
-                start: 960,
-                audio: audio.clone(),
-                waveform: waveform.clone(),
-            },
-        ],
-    },
-];
+let tracks = vec![track];
 
-// Map clip IDs to their audio file paths
-let mut audio_paths = HashMap::new();
-audio_paths.insert(0, PathBuf::from("../samples/kick.wav"));
-audio_paths.insert(1, PathBuf::from("../samples/snare.wav"));
+// Map clip names to their sample references
+let mut sample_refs = HashMap::new();
+sample_refs.insert(
+    "Kick".to_string(),
+    SampleRef::DevRoot(PathBuf::from("drums/kick.wav")),
+);
+sample_refs.insert(
+    "Snare".to_string(),
+    SampleRef::DevRoot(PathBuf::from("drums/snare.wav")),
+);
 
 save_project(
     Path::new("projects/my_song.dawproj"),
@@ -103,31 +128,44 @@ save_project(
     120.0,           // tempo
     (4, 4),          // time signature
     &tracks,
-    &audio_paths,
+    &sample_refs,
 )?;
 ```
 
 ### Loading a Project
 
 ```rust
-use daw_project::load_project;
+use daw_project::{load_project, PathContext};
 use std::path::Path;
 
-let project = load_project(Path::new("projects/my_song.dawproj"))?;
+// Create a PathContext for resolving sample references
+let project_path = Path::new("projects/my_song.dawproj");
+let ctx = PathContext::from_project_path(project_path)
+    .with_dev_root("/Users/me/dev/daw".into());
+
+let project = load_project(project_path, &ctx)?;
 
 println!("Project: {}", project.name);
 println!("Tempo: {} BPM", project.tempo);
 println!("Time Signature: {}/{}", project.time_signature.0, project.time_signature.1);
 println!("Tracks: {}", project.tracks.len());
 
-// Access loaded tracks (with decoded audio buffers)
+// Access loaded tracks (with decoded AudioArc buffers)
 for track in &project.tracks {
-    println!("Track '{}' (ID: {}) has {} clips", track.name, track.id.0, track.clips.len());
+    println!("Track '{}' (ID: {}) has {} clips", track.name, track.id.0, track.clips().len());
 }
 
-// Access original audio paths (for re-saving)
-for (clip_id, path) in &project.audio_paths {
-    println!("Clip {} -> {:?}", clip_id, path);
+// Access sample references (for re-saving)
+for (clip_name, sample_ref) in &project.sample_refs {
+    println!("Clip '{}' -> {}", clip_name, sample_ref);
+}
+
+// Check for offline clips (missing audio files)
+if !project.offline_clips.is_empty() {
+    println!("Warning: {} clip(s) are offline:", project.offline_clips.len());
+    for offline in &project.offline_clips {
+        println!("  - {} ({}): {}", offline.name, offline.sample_ref, offline.error);
+    }
 }
 ```
 
@@ -157,32 +195,42 @@ When loading a project, you receive a `LoadedProject` struct:
 | `name` | String | Project name |
 | `tempo` | f64 | Tempo in BPM |
 | `time_signature` | (u32, u32) | Time signature |
-| `tracks` | Vec\<Track\> | Tracks with decoded audio buffers |
-| `audio_paths` | HashMap\<u64, PathBuf\> | Map of clip IDs to original audio paths |
+| `tracks` | Vec\<Track\> | Tracks with decoded AudioArc buffers |
+| `sample_refs` | HashMap\<String, SampleRef\> | Map of clip names to their sample references |
+| `offline_clips` | Vec\<OfflineClip\> | Clips whose audio couldn't be loaded |
 
-The `audio_paths` map preserves the original paths from the project file, which is useful when re-saving the project.
+The `sample_refs` map preserves the original sample references from the project file, which is useful when re-saving the project.
+
+### OfflineClip
+
+When audio files are missing or fail to load, they appear in the `offline_clips` list:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | String | Clip name |
+| `sample_ref` | SampleRef | The sample reference that failed |
+| `error` | String | Description of the error |
 
 ## Error Handling
 
-The crate uses `ProjectError` for error handling:
+The crate uses `anyhow::Result` for error handling. Common errors include:
 
-```rust
-pub enum ProjectError {
-    Io(std::io::Error),           // File I/O errors
-    Serialize(rmp_serde::encode::Error),   // Serialization errors
-    Deserialize(rmp_serde::decode::Error), // Deserialization errors
-    AudioDecode { path: PathBuf, source: anyhow::Error }, // Audio file decoding errors
-}
-```
+- File I/O errors (missing project file)
+- JSON parse errors (corrupted project file)
+- Audio decode errors (handled gracefully via `offline_clips`)
 
 ## Example: Complete Roundtrip
 
 ```rust
-use daw_project::{load_project, save_project};
+use daw_project::{load_project, save_project, PathContext};
 use std::path::Path;
 
+// Create path context
+let ctx = PathContext::from_project_path(Path::new("projects/original.dawproj"))
+    .with_dev_root("/Users/me/dev/daw".into());
+
 // Load existing project
-let project = load_project(Path::new("projects/original.dawproj"))?;
+let project = load_project(Path::new("projects/original.dawproj"), &ctx)?;
 
 // Modify tempo
 let new_tempo = 140.0;
@@ -194,7 +242,7 @@ save_project(
     new_tempo,
     project.time_signature,
     &project.tracks,
-    &project.audio_paths,
+    &project.sample_refs,
 )?;
 ```
 
